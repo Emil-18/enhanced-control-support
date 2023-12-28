@@ -502,7 +502,7 @@ class ControlDialog(SettingsDialog):
 		
 		# Translators: The start of a text in a dialog box
 		start = _('Select a control type. NVDA will behave as if')
-		middle = f' {name+" "+role} '
+		middle = f' {name} {role} '
 		# Translators: the end of a text in a dialog box
 		end = _('and all similar controls in the same program are the control type you selected, for example, if you select button, all similar controls will be treated as buttons')
 		text = start+middle+end
@@ -606,21 +606,6 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		clsList.remove(IAccessible.ContentGenericClient)
 		clsList.insert(0, TimerMixin)
 		clsList.insert(0, cls)
-#	def event_gainFocus(self, obj, nextHandler):
-#		if isinstance(obj, TimerMixin):
-#			return(nextHandler())
-#		displayObj = self.displayObj
-#		if displayObj and displayObj.windowHandle != obj.windowHandle:
-#			try:
-#				displayModel.requestTextChangeNotifications(displayObj, False)
-#			except:
-#				pass
-#			self.displayObj = None
-#		if not displayObj and isinstance(obj, Unknown):
-#			self.displayObj = obj
-#			displayModel.requestTextChangeNotifications(obj, True)
-#		nextHandler()
-
 	@script(
 		# Translators: Describes the select control type script
 		description = _('Lets you choose from a list of controls how NVDA will treat the control with focus. For example, choos \'button\' To tell NVDA to treat it as a button.'),
