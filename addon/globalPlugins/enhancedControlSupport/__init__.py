@@ -588,11 +588,11 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 					clsList.remove(i)
 		if conf and conf[0] == 'UIA':
 			for i in copyList:
-				if issubclass(i, IAccessible.IAccessible):
+				if issubclass(i, IAccessible.IAccessible) and i != IAccessible.IAccessible:
 					clsList.remove(i)
 		if conf and conf[0] == 'MSAA':
 			for i in copyList:
-				if issubclass(i, UIA.UIA):
+				if issubclass(i, UIA.UIA) and i != UIA.UIA:
 					clsList.remove(i)
 		if conf and not conf[1]:
 			clsList.insert(0, TimerMixin)
