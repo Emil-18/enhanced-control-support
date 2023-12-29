@@ -1,3 +1,5 @@
+<div lang = "nb_no">
+
 # Forbedret kontroll Støtte.
 * Forfatter: Emil-18.
 * NVDA-kompatibilitet: 2023.1 og utover.
@@ -74,3 +76,5 @@ Den vil også bli behandlet som av når NVDA automatisk gjenkjenner en egendefin
 Dette vil også bare påvirke kontrollen du interagerte med før du åpnet dialogen.
 * Bruk midlertidig normal tilleggsoppførsel for alle kontroller avkryssingsboks:
 hvis denne er merket av, vil NVDA bruke normal tilleggsoppførsel for alle kontroller inntil NVDA startes på nytt eller avkryssingsboksen blir ikke avkrysset igjen. Dette er nyttig hvis du har endret en kontroll, men det får NVDA til og ikke fungere til et punkt hvor det er umulig å endre kontrollen tilbake.
+
+</div>
