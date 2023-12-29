@@ -29,7 +29,7 @@ addon_info = {
 	# Author(s)
 	"addon_author": "Emil-18 <emilhesmyr@icloud.com",
 	# URL for the add-on documentation support
-	"addon_url": "https://github.com/emil-18/enhanced-control-support/blob/master/addon/doc/readme.html",
+	"addon_url": "https://github.com/emil-18/enhanced-control-support",
 	# URL for the add-on repository where the source code can be found
 	"addon_sourceURL": "https://github.com/emil-18/enhanced-control-support",
 	# Documentation file name
