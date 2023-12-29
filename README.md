@@ -1,7 +1,7 @@
 # Enhanced Control Support.
 * Author: Emil-18.
 * NVDA compatibility: 2023.1 and beyond.
-* Download: [Stable version](https://github.com/Emil-18/enhanced-control-support/releases/download/v1.0.0/enhancedControlSupport-1.0.nvda-addon).
+* Download: [Stable version](https://github.com/Emil-18/enhanced-control-support/releases/download/v1.0.1/enhancedControlSupport-1.0.1.nvda-addon).
 
 This add-on allows you to use some controls that normally don't work with NVDA.
 
@@ -74,3 +74,10 @@ It will also be treated as off when NVDA automaticly recognises a custom control
 This will also only affect the control you interacted with before opening the dialog.
 * Temporarily use normal add-on behavior for all controls checkbox:
 if checked, NVDA will use normal add-on behavior for all controls until NVDA is restarted or the check box is un checked again. This is useful if you have changed a control but it breaks NVDA to the point where it is impossible to change the control back.
+
+## Change log
+### v1.0.1
+
+The add-on should no longer play error sounds when changing accessibillity API
+### v1.0
+Initial release.
