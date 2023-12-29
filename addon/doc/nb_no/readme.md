@@ -3,7 +3,7 @@
 # Forbedret kontroll Støtte.
 * Forfatter: Emil-18.
 * NVDA-kompatibilitet: 2023.1 og utover.
-* Last ned: [Stabil versjon](https://github.com/Emil-18/enhanced-control-support/releases/download/v1.0.0/enhancedControlSupport-1.0.nvda-addon).
+* Last ned: [Stabil versjon](https://github.com/Emil-18/enhanced-control-support/releases/download/v1.0.1/enhancedControlSupport-1.0.1.nvda-addon).
 
 Dette tillegget lar deg bruke noen kontroller som normalt ikke fungerer med NVDA.
 
@@ -77,4 +77,13 @@ Dette vil også bare påvirke kontrollen du interagerte med før du åpnet dialo
 * Bruk midlertidig normal tilleggsoppførsel for alle kontroller avkryssingsboks:
 hvis denne er merket av, vil NVDA bruke normal tilleggsoppførsel for alle kontroller inntil NVDA startes på nytt eller avkryssingsboksen blir ikke avkrysset igjen. Dette er nyttig hvis du har endret en kontroll, men det får NVDA til og ikke fungere til et punkt hvor det er umulig å endre kontrollen tilbake.
 
+## Forandrings log.
+
+### v1.0.1.
+
+Tillegget burde ikke lenger spille av feilmeldings lyder når du bytter tiljengelighets-grensesnitt.
+
+### v1.0.
+
+Første versjon.
 </div>
