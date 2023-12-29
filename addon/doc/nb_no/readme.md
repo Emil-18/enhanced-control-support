@@ -3,7 +3,7 @@
 # Forbedret kontroll Støtte.
 * Forfatter: Emil-18.
 * NVDA-kompatibilitet: 2023.1 og utover.
-* Last ned: [Stabil versjon](https://github.com/emil-18/enhanced-control-support/releases/download/v1.0/enhanced-control-support.nvda-addon).
+* Last ned: [Stabil versjon](https://github.com/Emil-18/enhanced-control-support/releases/download/v1.0.0/enhancedControlSupport-1.0.nvda-addon).
 
 Dette tillegget lar deg bruke noen kontroller som normalt ikke fungerer med NVDA.
 
