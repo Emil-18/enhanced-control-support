@@ -12,6 +12,7 @@ When this add-on refers to controls, it does not refer to individual objects. Yo
 What is defined as a control is application specific. The buttons of the run dialog, for instance, is eatch defined as one control. In contrast, everything in the windows 10 calculator is  part of one control, the window itself.
 
 For now, the add-on supports:
+
 * Buttons.
 * Check boxes.
 * Edit controls.
@@ -54,25 +55,22 @@ When this add-on is enabled, you can not read all the visual text in the control
 To restore normal NVDA behavior for the current control, select "Use normal NVDA behavior" in the control type combo box (see below).
 
 ## Gestures:
+
 * NVDA+ALT+C: Open the dialog used to change control type for the focused control.
 * NVDA+ALT+SHIFT+C: Open the dialog used to change control type for the control where the navigator object is located.
 * NVDA+alt+r: Reports the type of control where the focus, if pressed once, or the navigator object, if pressed twice, is located.
 ## settings of the select control type dialog.
 
 * Control type combo box:
-
 This is a combo box that lists all the control types you can select from.
-
 What you select here will only affect controls in the application you interacted with when opening the dialog.
 It will also only affect controls that is similar to the control you interacted with before opening the dialog.
 Let's say you changed the OK button in the run dialog to be treated as a check box.
 Now, the cancel and browse buttons will also be reported as check boxes, but the edit field will still be reported as a edit field, because it is a different type of control.
 Same if you for example open the save dialog in word pad. The buttons there will still be treated as buttons, because they are in a different program then the run dialog.
 * rely on events check box:
-
 This is a check box that allows you to choose if NVDA should rely on events, notifications sent by controls to screen readers to notify them about things such as name changes, when interacting with the control. Most custom controls do not implement events correctly, so it is off by default.
 It will also be treated as off when NVDA automaticly recognises a custom control.
-
 This will also only affect the control you interacted with before opening the dialog.
 * Temporarily use normal add-on behavior for all controls checkbox:
 if checked, NVDA will use normal add-on behavior for all controls until NVDA is restarted or the check box is un checked again. This is useful if you have changed a control but it breaks NVDA to the point where it is impossible to change the control back.

@@ -12,6 +12,7 @@ Når dette tillegget refererer til kontroller, refererer det ikke til individuel
 Hva som defineres som en kontroll er applikasjonsspesifikk. Knappene i kjør-dialogen, for eksempel, er vær definert som én kontroll. Derimot er alt i Windows 10-kalkulatoren en del av én kontroll, selve vinduet.
 
 Foreløpig støtter tillegget:
+
 * Knapper.
 * Avkryssingsbokser.
 * Redigerings kontroller.
@@ -54,25 +55,22 @@ Når dette tillegget er aktivert, kan du ikke lese all den visuelle teksten i ko
 For å gjenopprette normal NVDA-oppførsel for gjeldende kontroll, velg "Bruk normal NVDA-oppførsel" i kontrolltype-kombinasjonsboksen (se nedenfor).
 
 ## Gester:
+
 * NVDA+ALT+C: Åpne dialogboksen som brukes til å endre kontrolltype for den fokuserte kontrollen.
 * NVDA+ALT+SHIFT+C:Åpne dialogboksen som brukes til å endre kontrolltype for kontrollen der navigasjonsobjektet befinner seg.
 * NVDA+alt+r: Rapporterer kontroll typen der fokuset, hvis det trykkes én gang, eller navigasjonsobjektet, hvis det trykkes to ganger, er plassert.
 ## innstillinger i dialogboksen for valg av kontrolltype.
 
 * Kontrolltype kombinasjonsboks:
-
 Dette er en kombinasjonsboks som viser alle kontrolltypene du kan velge fra.
-
 Det du velger her, vil kun påvirke kontrollene i applikasjonen du interagerte med da du åpnet dialogen.
 Det vil også bare påvirke kontroller som ligner på kontrollen du interagerte med før du åpnet dialogen.
 La oss si at du endret OK-knappen i kjør-dialogen til å bli behandlet som en avkryssingsboks.
 Nå vil avbryt- og bla gjennom-knappene også rapporteres som avkryssingsbokser, men redigeringsfeltet vil fortsatt rapporteres som et redigeringsfelt, fordi det er en annen type kontroll.
 Samme hvis du for eksempel åpner lagringsdialogen i wordpad. Knappene der vil fortsatt bli behandlet som knapper, fordi de er i et annet program enn kjør-dialogen.
 * stol på hendelser avkryssingsboks:
-
 Dette er en avkryssingsboks som lar deg velge om NVDA skal stole på hendelser, varsler sendt av kontroller til skjermlesere for å varsle dem om ting som navneendringer, når de samhandler med kontrollen. De fleste egendefinerte kontroller implementerer ikke hendelser riktig, så den er av som standard.
 Den vil også bli behandlet som av når NVDA automatisk gjenkjenner en egendefinert kontroll.
-
 Dette vil også bare påvirke kontrollen du interagerte med før du åpnet dialogen.
 * Bruk midlertidig normal tilleggsoppførsel for alle kontroller avkryssingsboks:
 hvis denne er merket av, vil NVDA bruke normal tilleggsoppførsel for alle kontroller inntil NVDA startes på nytt eller avkryssingsboksen blir ikke avkrysset igjen. Dette er nyttig hvis du har endret en kontroll, men det får NVDA til og ikke fungere til et punkt hvor det er umulig å endre kontrollen tilbake.
