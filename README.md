@@ -1,7 +1,7 @@
 # Enhanced Control Support.
 * Author: Emil-18.
 * NVDA compatibility: 2023.1 and beyond.
-* Download: [Stable version](https://github.com/emil-18/enhanced-control-support/releases/download/v1.0/enhanced-control-support.nvda-addon).
+* Download: [Stable version](https://github.com/Emil-18/enhanced-control-support/releases/download/v1.0.0/enhancedControlSupport-1.0.nvda-addon).
 
 This add-on allows you to use some controls that normally don't work with NVDA.
 
