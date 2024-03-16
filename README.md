@@ -1,7 +1,7 @@
 # Enhanced Control Support.
 * Author: Emil-18.
 * NVDA compatibility: 2023.1 and beyond.
-* Download: [Stable version](https://github.com/Emil-18/enhanced-control-support/releases/download/v1.0.1/enhancedControlSupport-1.0.1.nvda-addon).
+* Download: [Stable version](https://github.com/Emil-18/enhanced-control-support/releases/download/v1.1/enhancedControlSupport-1.1.nvda-addon).
 
 This add-on allows you to use some controls that normally don't work with NVDA.
 
@@ -44,7 +44,7 @@ You can do both of these things using the control type combo box (see below).
 
 If NVDA can't find out what a control is, the control type will be reported as "unknown", and NVDA will try to find out where the focus is by looking at the text colors. Note that the control must support screen review for this to work.
 
-NVDA will treat the text that has the least reccurring color in the control as its name, and both speech and braille will be updated when the name changes, so you should be able to do things such as navigate through a list with the arrow keys.
+NVDA will treat the text that has the least recurring color in the control as its name, and both speech and braille will be updated when the name changes, so you should be able to do things such as navigate through a list with the arrow keys.
 
 This behavior can also be achieved in any control by selecting "unknown" in the control type combo box (see below).
 
@@ -53,6 +53,16 @@ Note:
 When this add-on is enabled, you can not read all the visual text in the control in object review mode when landing in an unknown control like you can normally.
 
 To restore normal NVDA behavior for the current control, select "Use normal NVDA behavior" in the control type combo box (see below).
+
+## Enhanced UIA.
+
+When this is selected from the control type combo box (see below), and if you are in a text field, NVDA will report selected suggestions as though they has focus.
+Note that this may overwrite NVDA's custom support for some controls
+
+## Enhanced typing support.
+
+In some controls, NVDA behaves strangely when typing or deleting text, e.g, not speaking the deleted character/word, or not updating braille. One example include the main edit control in visual studio. Enhanced typing support attempts to fix these issues.
+Enhanced typing support will be enabled automaticly in some controls, but you can always turn it on by checking the "Use enhanced typing support" check box in the select control type dialog (see below).
 
 ## Gestures:
 
@@ -68,14 +78,23 @@ It will also only affect controls that is similar to the control you interacted 
 Let's say you changed the OK button in the run dialog to be treated as a check box.
 Now, the cancel and browse buttons will also be reported as check boxes, but the edit field will still be reported as a edit field, because it is a different type of control.
 Same if you for example open the save dialog in word pad. The buttons there will still be treated as buttons, because they are in a different program then the run dialog.
+Note that when you select "Use normal add-on behavior", every modification you have done to the control via this add-on will be deleted.
+This is not the case when you select "use normal NVDA behavior". You can, for instance, make the control use normal NVDA behavior, and still choose to not rely on events.
 * rely on events check box:
 This is a check box that allows you to choose if NVDA should rely on events, notifications sent by controls to screen readers to notify them about things such as name changes, when interacting with the control. Most custom controls do not implement events correctly, so it is off by default.
 It will also be treated as off when NVDA automaticly recognises a custom control.
-This will also only affect the control you interacted with before opening the dialog.
-* Temporarily use normal add-on behavior for all controls checkbox:
+* Use enhanced typing support check box
+This is a check box that allows you to choose if NVDA should use enhanced typing support when interacting with the control.
+This is useful if NVDA behaves strangely when typing or deleting text
+* Temporarily use normal add-on behavior for all controls check box:
 if checked, NVDA will use normal add-on behavior for all controls until NVDA is restarted or the check box is un checked again. This is useful if you have changed a control but it breaks NVDA to the point where it is impossible to change the control back.
 
 ## Change log
+### v1.1
+
+* Added a new option called "enhanced UIA"
+* Added a new Enhanced typed character support setting. This can be toggeled in any control via the select control type dialog, but will be enabled by default for certain controls
+* Fixed some UIAutomation errors present in NVDA.
 ### v1.0.1
 
 The add-on should no longer play error sounds when changing accessibillity API
