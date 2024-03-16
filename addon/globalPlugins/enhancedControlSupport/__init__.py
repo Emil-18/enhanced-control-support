@@ -542,12 +542,12 @@ supportedControls.sort()
 supportedControls.insert(0, _('Use normal add-on behavior'))
 supportedControls.append('MSAA')
 supportedControls.append('UIA')
-supportedControls.append("enhanced UIA")
+# Translators: an option in a combo box
+enhancedUIA = _("enhanced UIA")
+supportedControls.append(enhancedUIA)
 # Translators: an option in a combo box
 normal = _('Use normal NVDA behavior')
 supportedControls.append(normal)
-# Translators: an option in a combo box
-enhancedUIA = _("enhanced UIA")
 classNamesToNVDAControlTypeNames.update({'MSAA': 'MSAA', 'UIA': 'UIA', "enhanced UIA": enhancedUIA, 'normal': normal})
 class ControlDialog(SettingsDialog):
 	# Translators: The title for the control type selection dialog
