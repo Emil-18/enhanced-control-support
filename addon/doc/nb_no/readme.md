@@ -3,7 +3,7 @@
 # Forbedret kontroll Støtte.
 * Forfatter: Emil-18.
 * NVDA-kompatibilitet: 2023.1 og utover.
-* Last ned: [Stabil versjon](https://github.com/Emil-18/enhanced-control-support/releases/download/v1.0.1/enhancedControlSupport-1.0.1.nvda-addon).
+* Last ned: [Stabil versjon](https://github.com/Emil-18/enhanced-control-support/releases/download/v1.1/enhancedControlSupport-1.1.nvda-addon).
 
 Dette tillegget lar deg bruke noen kontroller som normalt ikke fungerer med NVDA.
 
@@ -56,6 +56,16 @@ Når dette tillegget er aktivert, kan du ikke lese all den visuelle teksten i ko
 
 For å gjenopprette normal NVDA-oppførsel for gjeldende kontroll, velg "Bruk normal NVDA-oppførsel" i kontrolltype-kombinasjonsboksen (se nedenfor).
 
+## Forbedret UIA.
+
+Når dette er valgt fra kontrolltype kombinasjonsboksen (se nedenfor), og hvis du er i et tekstfelt, vil NVDA rapportere valgte forslag som om de har fokus.
+Merk at dette kan overskrive NVDAs tilpassede støtte for enkelte kontroller
+
+## Forbedret skrivestøtte.
+
+I noen kontroller oppfører NVDA seg merkelig når du skriver eller sletter tekst, f.eks. ikke sier det slettede tegnet/ordet, eller ikke oppdaterer punktskrift. Et eksempel inkluderer hovedredigeringskontrollen i Visual Studio. Forbedret skrivestøtte forsøker å fikse disse problemene.
+Forbedret skrivestøtte vil bli aktivert automatisk i noen kontroller, men du kan alltid slå den på ved å merke av for "Bruk forbedret skrivestøtte" i dialogboksen for valg av kontrolltype (se nedenfor).
+
 ## Gester:
 
 * NVDA+ALT+C: Åpne dialogboksen som brukes til å endre kontrolltype for den fokuserte kontrollen.
@@ -70,15 +80,23 @@ Det vil også bare påvirke kontroller som ligner på kontrollen du interagerte 
 La oss si at du endret OK-knappen i kjør-dialogen til å bli behandlet som en avkryssingsboks.
 Nå vil avbryt- og bla gjennom-knappene også rapporteres som avkryssingsbokser, men redigeringsfeltet vil fortsatt rapporteres som et redigeringsfelt, fordi det er en annen type kontroll.
 Samme hvis du for eksempel åpner lagringsdialogen i wordpad. Knappene der vil fortsatt bli behandlet som knapper, fordi de er i et annet program enn kjør-dialogen.
+Merk at når du velger "Bruk normal tilleggsoppførsel", vil alle endringer du har gjort på kontrollen via dette tillegget bli slettet.
+Dette er ikke tilfelle når du velger "bruk normal NVDA-oppførsel". Du kan for eksempel få kontrollen til å bruke normal NVDA-oppførsel, og likevel velge å ikke stole på hendelser.
 * stol på hendelser avkryssingsboks:
 Dette er en avkryssingsboks som lar deg velge om NVDA skal stole på hendelser, varsler sendt av kontroller til skjermlesere for å varsle dem om ting som navneendringer, når de samhandler med kontrollen. De fleste egendefinerte kontroller implementerer ikke hendelser riktig, så den er av som standard.
 Den vil også bli behandlet som av når NVDA automatisk gjenkjenner en egendefinert kontroll.
-Dette vil også bare påvirke kontrollen du interagerte med før du åpnet dialogen.
+* Bruk forbedret skrivestøtte avkryssingsboks
+Dette er en avkryssingsboks som lar deg velge om NVDA skal bruke forbedret skrivestøtte når du samhandler med kontrollen.
+Dette er nyttig hvis NVDA oppfører seg merkelig når du skriver eller sletter tekst
 * Bruk midlertidig normal tilleggsoppførsel for alle kontroller avkryssingsboks:
 hvis denne er merket av, vil NVDA bruke normal tilleggsoppførsel for alle kontroller inntil NVDA startes på nytt eller avkryssingsboksen blir ikke avkrysset igjen. Dette er nyttig hvis du har endret en kontroll, men det får NVDA til og ikke fungere til et punkt hvor det er umulig å endre kontrollen tilbake.
 
 ## Forandrings log.
+### v1.1
 
+* Lagt til et nytt alternativ kalt "forbedret UIA"
+* Lagt til en ny  innstilling for forbedret skrivestøtte. Dette kan slås på i hvilken som helst kontroll via dialogboksen for valg av kontrolltype, men vil være aktivert som standard for visse kontroller
+* Rettet noen UIAutomation-feil i NVDA.
 ### v1.0.1.
 
 Tillegget burde ikke lenger spille av feilmeldings lyder når du bytter tiljengelighets-grensesnitt.
