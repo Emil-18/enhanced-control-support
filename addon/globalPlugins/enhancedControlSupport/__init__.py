@@ -1,6 +1,6 @@
 # coding: utf-8
-# Copyright 2023 Emil-18
-# An add-on that enhances support for win 32 controls that don't support MSAA/IAccessible
+# Copyright 2023 - 2024 Emil-18
+# An add-on that enhances support for controls that normaly don't work well with NVDA
 # This add-on is licensed under the same license as NVDA. See the copying.txt file for more information
 
 #* imports
@@ -11,6 +11,7 @@ import appModuleHandler
 import config
 import controlTypes
 import displayModel
+import editableText
 import eventHandler
 import globalPluginHandler
 import globalVars
@@ -51,7 +52,7 @@ kernel32 = windll.kernel32
 oleacc = windll.oleacc
 #* helper functions
 cachedAppNames = {}
-notWin32 = ('MSAA', 'UIA', 'normal')
+notWin32 = ('MSAA', 'UIA', "enhanced UIA", 'normal')
 def getKeyFromWindow(windowHandle, bypassDisabled = False):
 	if disabled and not bypassDisabled:
 		return
@@ -135,8 +136,10 @@ def newIsUIAWindow(self, windowHandle, *args, **kwargs):
 	conf = getConfigFromWindow(windowHandle)
 	if not conf:
 		return(oldIsUIAWindow(self, windowHandle, *args, **kwargs))
+	if conf and conf[0] == "normal":
+		return(oldIsUIAWindow(self, windowHandle, *args, **kwargs))
 	cls = conf[0]
-	if shouldUseWin32(windowHandle) or cls in notWin32 and cls != 'UIA':
+	if shouldUseWin32(windowHandle) or cls in notWin32 and cls not in ["UIA", "enhanced UIA"]:
 		return(False)
 	return(True)
 
@@ -297,6 +300,69 @@ def timerFunc(self):
 				eventHandler.queueEvent('caret', focus)
 timer = wx.Timer(gui.mainFrame)
 gui.mainFrame.Bind(wx.EVT_TIMER, handler = timerFunc, source = timer)
+#* Additions
+class EnhancedUIATextInfo(UIA.UIATextInfo):
+	def _getFormatFieldAtRange(self, rangeObj, formatConfig, ignoreMixedValues = False):
+		old = None
+		try:
+			old = super(EnhancedUIATextInfo, self)._getFormatFieldAtRange(rangeObj, formatConfig, ignoreMixedValues = ignoreMixedValues)
+			return(old)
+		except:
+			pass
+		return(None)
+
+class EnhancedUIASupport(UIA.UIA):
+	def event_UIA_elementSelected(self):
+		obj = NVDAObject.objectWithFocus()
+		conf = getConfigFromWindow(obj.windowHandle)
+		if conf and conf[0] == "enhanced UIA" and isinstance(obj, behaviors.EditableTextBase):
+			eventHandler.executeEvent("gainFocus", self)
+		super(EnhancedUIASupport, self).event_UIA_elementSelected()
+	def _get_states(self):
+		try:
+			states = super(EnhancedUIASupport, self).states
+		except:
+			states = set()
+		return(states)
+	def _get_TextInfo(self):
+		TextInfo = super(EnhancedUIASupport, self).TextInfo
+		if issubclass(TextInfo, UIA.UIATextInfo):
+			TextInfo = EnhancedUIATextInfo
+		return(TextInfo)
+
+class EnhancedTypingMixin():
+	def script_caret_backspaceCharacter(self, gesture):
+		info = api.getCaretPosition().copy()
+		info.move(textInfos.UNIT_CHARACTER, -1)
+		info.expand(textInfos.UNIT_CHARACTER)
+		speech.speech.speakSpelling(info.text)
+		gesture.send()
+		braille.handler.handleUpdate(api.getFocusObject())
+	def script_caret_backspaceWord(self, gesture):
+		info = api.getCaretPosition().copy()
+		info.move(textInfos.UNIT_CHARACTER, -1)
+		info.expand(textInfos.UNIT_WORD)
+		speech.speech.speakMessage(info.text)
+		gesture.send()
+		braille.handler.handleUpdate(api.getFocusObject())
+	def script_caret_deleteCharacter(self, gesture):
+		info = api.getCaretPosition().copy()
+		info.move(textInfos.UNIT_CHARACTER, +1)
+		info.expand(textInfos.UNIT_CHARACTER)
+		speech.speech.speakSpelling(info.text)
+		gesture.send()
+		braille.handler.handleUpdate(api.getFocusObject())
+	def script_caret_deleteWord(self, gesture):
+		info = api.getCaretPosition().copy()
+		info.move(textInfos.UNIT_CHARACTER, +1)
+		info.expand(textInfos.UNIT_WORD)
+		speech.speech.speakMessage(info.text)
+		gesture.send()
+		braille.handler.handleUpdate(api.getFocusObject())
+
+	def event_typedCharacter(self, ch = None):
+		super(EnhancedTypingMixin, self).event_typedCharacter(ch = ch)
+		braille.handler.handleUpdate(api.getFocusObject())
 #* slider support
 #** slider messages
 TBM_GETPOS = 1024
@@ -476,11 +542,13 @@ supportedControls.sort()
 supportedControls.insert(0, _('Use normal add-on behavior'))
 supportedControls.append('MSAA')
 supportedControls.append('UIA')
+supportedControls.append("enhanced UIA")
 # Translators: an option in a combo box
 normal = _('Use normal NVDA behavior')
 supportedControls.append(normal)
-
-classNamesToNVDAControlTypeNames.update({'MSAA': 'MSAA', 'UIA': 'UIA', 'normal': normal})
+# Translators: an option in a combo box
+enhancedUIA = _("enhanced UIA")
+classNamesToNVDAControlTypeNames.update({'MSAA': 'MSAA', 'UIA': 'UIA', "enhanced UIA": enhancedUIA, 'normal': normal})
 class ControlDialog(SettingsDialog):
 	# Translators: The title for the control type selection dialog
 	title = _('Select control type')
@@ -515,6 +583,10 @@ class ControlDialog(SettingsDialog):
 		self.checkBox = wx.CheckBox(self, label = label2)
 		helper.addItem(self.checkBox)
 		# Translators: The label for a check box
+		label = _("Use enhanced typing support")
+		self.enhancedTyping = wx.CheckBox(self, label = label)
+		helper.addItem(self.enhancedTyping)
+		# Translators: The label for a check box
 		label = _('Temporarily use normal add-on behavior for all controls')
 		self.disable = wx.CheckBox(self, label = label)
 		helper.addItem(self.disable)
@@ -531,6 +603,11 @@ class ControlDialog(SettingsDialog):
 			self.choice.SetSelection(index)
 			eventSupport = conf[1]
 			self.checkBox.SetValue(eventSupport)
+			if len(conf) <= 2:
+				conf.append(False)
+			enhancedTyping = conf[2]
+			self.enhancedTyping.SetValue(enhancedTyping)
+		
 		self.choice.SetFocus()
 	def onOk(self, *args, **kwargs):
 		global disabled
@@ -547,7 +624,8 @@ class ControlDialog(SettingsDialog):
 			if classNamesToNVDAControlTypeNames.get(i) == name:
 				name = i
 		checked = self.checkBox.GetValue()
-		conf = [name, checked]
+		enhancedTyping = self.enhancedTyping.GetValue()
+		conf = [name, checked, enhancedTyping]
 		cfg.update({self.key: conf})
 		return(super(ControlDialog, self).onOk(*args, **kwargs))
 class GlobalPlugin(globalPluginHandler.GlobalPlugin):
@@ -578,6 +656,21 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		IAccessibleHandler.processFocusWinEvent = oldProcessFocusWinEvent
 	def chooseNVDAObjectOverlayClasses(self, obj, clsList):
 		conf = getConfigFromWindow(obj.windowHandle)
+		isEditable = False
+		for i in clsList:
+			if issubclass(i, editableText.EditableText):
+				isEditable = True
+		if isEditable and conf and conf[2]:
+			clsList.insert(0, EnhancedTypingMixin)
+		if obj.windowClassName.startswith("HwndWrapper") and isEditable and not conf:
+			clsList.insert(0, EnhancedTypingMixin)
+		if issubclass(obj.APIClass, UIA.UIA):
+			if conf and conf[0] == "enhanced UIA":
+				index = 0
+			else:
+				index = clsList.index(UIA.UIA)
+			if not (conf and conf[0] == "normal"):
+				clsList.insert(index, EnhancedUIASupport)
 		copyList = clsList.copy()
 		if conf and shouldUseWin32(obj.windowHandle) and issubclass(obj.APIClass, Win32):
 			# Remove as many unnecessary subclasses as possible, to reduce the chanse of errors
