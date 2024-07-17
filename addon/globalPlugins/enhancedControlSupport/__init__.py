@@ -65,16 +65,20 @@ config.conf.spec["enhancedControlSupport"] = confSpec
 class EnhancedControlSupportSettingsPanel(gui.SettingsPanel):
 	# Translators: the title of the enhanced control support settings panel
 	title = _("Enhanced control support")
+	def onValueChange(self, evt):
+		self.focusEnhancement.Enable(not evt.IsChecked())
 	def makeSettings(self, settingsSizer):
 		settings = gui.guiHelper.BoxSizerHelper(self, sizer=settingsSizer)
+		# Translators: the label for a checkbox
+		label = ("Rely on events by default")
+		self.trustEvents = settings.addItem(wx.CheckBox(self, label = label))
+		self.trustEvents.SetValue(config.conf["enhancedControlSupport"]["trustEvents"])
+		self.trustEvents.Bind(wx.EVT_CHECKBOX, self.onValueChange)
 		# Translators: the label for a checkbox
 		label = _("Use enhanced methods to detect where the focus is located (experimental)")
 		self.focusEnhancement = settings.addItem(wx.CheckBox(self, label = label))
 		self.focusEnhancement.SetValue(config.conf["enhancedControlSupport"]["focusEnhancement"])
-		# Translators: the label for a checkbox
-		label = _("Trust events")
-		self.trustEvents = settings.addItem(wx.CheckBox(self, label = label))
-		self.trustEvents.SetValue(config.conf["enhancedControlSupport"]["trustEvents"])
+		self.focusEnhancement.Enable(not self.trustEvents.GetValue())
 	def onSave(self):
 		config.conf["enhancedControlSupport"]["trustEvents"] = self.trustEvents.GetValue()
 		config.conf["enhancedControlSupport"]["focusEnhancement"] = self.focusEnhancement.GetValue()
@@ -752,7 +756,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			return()
 		if conf:
 			return
-		if not (config.conf["enhancedControlSupport"]["trustEvents"]) or config.conf["enhancedControlSupport"]["focusEnhancement"]:
+		if not config.conf["enhancedControlSupport"]["trustEvents"]:
 			clsList.insert(0, TimerMixin)
 		if not IAccessible.ContentGenericClient in clsList: # NVDA seams to recognise this window, so continue as normal.
 			return()
