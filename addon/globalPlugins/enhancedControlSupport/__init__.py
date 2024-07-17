@@ -46,11 +46,57 @@ def saveConfig():
 path = config.getInstalledUserConfigPath()
 configPath = os.path.join(path, 'controlConfig.ini')
 disabled = False
+oldFocus = None
+canTrustFocusEvents = True
+callLater = wx.CallLater(500, eventHandler.queueEvent)
+callLater.Stop()
+
 #* needed dlls
 user32 = windll.user32
 kernel32 = windll.kernel32
 oleacc = windll.oleacc
+#* config
+confSpec = {
+	"trustEvents":"boolean(default=False)",
+	"focusEnhancement": "boolean(default=False)"
+}
+config.conf.spec["enhancedControlSupport"] = confSpec
+#* settings dialog
+class EnhancedControlSupportSettingsPanel(gui.SettingsPanel):
+	# Translators: the title of the enhanced control support settings panel
+	title = _("Enhanced control support")
+	def makeSettings(self, settingsSizer):
+		settings = gui.guiHelper.BoxSizerHelper(self, sizer=settingsSizer)
+		# Translators: the label for a checkbox
+		label = _("Use enhanced methods to detect where the focus is located (experimental)")
+		self.focusEnhancement = settings.addItem(wx.CheckBox(self, label = label))
+		self.focusEnhancement.SetValue(config.conf["enhancedControlSupport"]["focusEnhancement"])
+		# Translators: the label for a checkbox
+		label = _("Trust events")
+		self.trustEvents = settings.addItem(wx.CheckBox(self, label = label))
+		self.trustEvents.SetValue(config.conf["enhancedControlSupport"]["trustEvents"])
+	def onSave(self):
+		config.conf["enhancedControlSupport"]["trustEvents"] = self.trustEvents.GetValue()
+		config.conf["enhancedControlSupport"]["focusEnhancement"] = self.focusEnhancement.GetValue()
 #* helper functions
+def objectWithFocus():
+	realFocus = NVDAObject.objectWithFocus()
+	if realFocus.role in [
+		controlTypes.Role.MENUBAR,
+		controlTypes.Role.MENU,
+		controlTypes.Role.POPUPMENU,
+	]:
+		for i in realFocus.children:
+			states = set()
+			try:
+				states = i.states
+			except:
+				pass
+			if controlTypes.State.FOCUSED in states:
+				realFocus = i
+				break
+	return(realFocus)
+
 cachedAppNames = {}
 notWin32 = ('MSAA', 'UIA', "enhanced UIA", 'normal')
 def getKeyFromWindow(windowHandle, bypassDisabled = False):
@@ -87,7 +133,7 @@ def findSupportedClass(windowHandle):
 	className = winUser.getClassName(windowHandle)
 	supportedNames = []
 	for i in supportedClasses:
-		if i.__name__.lower() in className.lower():
+		if i.__name__.lower() in className.lower() and not i.shouldLookAtClassName:
 			supportedNames.append(i)
 	if len(supportedNames) == 1:
 		cls = supportedNames[0]
@@ -117,7 +163,9 @@ def newWinEventToNVDAEvent(eventID, window, objectID, childID, useCache = True):
 
 	cls = configNamesToClasses[getConfigFromWindow(window)[0]]
 	index = childID - cls.winEventToIndex
-	obj = cls(windowHandle = window, index = index)
+	obj = cls(windowHandle = window)
+	if obj.subClass:
+		obj = obj.subClass(windowHandle = windowHandle, index = index)
 	return(name, obj)
 
 oldProcessFocusWinEvent = IAccessibleHandler.processFocusWinEvent
@@ -143,71 +191,20 @@ def newIsUIAWindow(self, windowHandle, *args, **kwargs):
 		return(False)
 	return(True)
 
-
-class TimerMixin():
-	shouldMonitorFocusEvents = False
-	shouldMonitorCaretEvents = False
-	staticName = staticRole = ''
-	staticStates = set()
-	
-	def initOverlayClass(self):
-		self.staticName = self.name
-		self.staticValue = self.value
-		self.staticStates = self.states
-		if self.shouldMonitorFocusEvents:
-			self.focusObject = self.getFocusObject()
-		try:
-			self.staticCaret = self.makeTextInfo(textInfos.POSITION_CARET)
-		except:
-			pass
-	def event_gainFocus(self):
-		timer.Start(50)
-		if not self.shouldMonitorFocusEvents:
-			super(TimerMixin, self).event_gainFocus()
-			return()
-		if self.index <0: # The parent object, e.g a list, got focus, but we want to fire a focus event on the child object that actualy has the system focus.
-			f = self.getFocus()
-			if f:
-				obj = Win32(self.windowHandle, f)
-				eventHandler.queueEvent('gainFocus', obj)
-				return()
-		super(TimerMixin, self).event_gainFocus()
-	def event_loseFocus(self):
-		timer.Stop()
-		super(TimerMixin, self).event_loseFocus()
-	def event_caret(self):
-		try:
-			caret = self.makeTextInfo(textInfos.POSITION_CARET)
-		except:
-			return
-		self.staticCaret = caret
-		super(TimerMixin, self).event_caret()
-	def event_nameChange(self):
-		self.staticName = self.name
-		super(TimerMixin, self).event_nameChange()
-	def event_valueChange(self):
-		self.staticValue = self.value
-		super(TimerMixin, self).event_valueChange()
-
-	def event_stateChange(self):
-		self.staticStates = self.states
-		super(TimerMixin, self).event_stateChange()
-
+#* Additions
 class Win32(window.Window):
 	'''
 	Support for win32 controls that don't support IAccessible
 	'''
 	winEventToIndex = 0
-	index =                 0
+	shouldLookAtClassName = True
+	displayName = None
 	isComplex = False # The control has other controls that NVDA should treat as NVDAObjects inside of it, such as a list.
 	baseRole = controlTypes.Role.WINDOW
+	subClass = None
 	clicks = 1 # the number of clicks that normaly are required to activate a control
 	def _get_role(self):
 		return(self.baseRole)
-	def __init__(self, windowHandle = None, index = -1):
-		if self.isComplex:
-			self.index = index
-		super(Win32, self).__init__(windowHandle = windowHandle)
 	def _get_win32Name(self):
 		return(self.windowText)
 	def doWindowAction(self):
@@ -226,11 +223,6 @@ class Win32(window.Window):
 	def doAction(self, index = None):
 		if not self.click():
 			self.doWindowAction()
-	def _isEqual(self, other):
-		eq = super(Win32, self)._isEqual(other)
-		if eq:
-			eq = self.index == other.index
-		return(eq)
 	@staticmethod
 	def isSupported(windowHandle):
 		return(False)
@@ -269,38 +261,88 @@ class Win32(window.Window):
 		if letter:
 			return(shortcut+letter)
 		return('')
+class TimerMixin(NVDAObject):
+	def _get_shouldMonitorFocusEvents(self):
+		if config.conf["enhancedControlSupport"]["focusEnhancement"]:
+			return(True)
+		if isinstance(self, Win32) and self.isComplex:
+			return(True)
+		return(False)
+	shouldMonitorCaretEvents = False
+	staticName = staticValue = ""
+	staticStates = set()
+	
+	def initOverlayClass(self):
+		self.staticName = self.name
+		self.staticValue = self.value
+		self.staticStates = self.states
+		try:
+			self.staticCaret = self.makeTextInfo(textInfos.POSITION_CARET)
+		except:
+			pass
+	def event_gainFocus(self):
+		timer.Start(50)
+		if self.shouldMonitorFocusEvents:
+			focusTimer.Start(50)
+		super(TimerMixin, self).event_gainFocus()
+	def event_loseFocus(self):
+		timer.Stop()
+		focusTimer.Stop()
+		super(TimerMixin, self).event_loseFocus()
+	def event_caret(self):
+		try:
+			caret = self.makeTextInfo(textInfos.POSITION_CARET)
+		except:
+			return
+		self.staticCaret = caret
+		super(TimerMixin, self).event_caret()
+	def event_nameChange(self):
+		self.staticName = self.name
+		super(TimerMixin, self).event_nameChange()
+	def event_valueChange(self):
+		self.staticValue = self.value
+		super(TimerMixin, self).event_valueChange()
+
+	def event_stateChange(self):
+		self.staticStates = self.states
+		super(TimerMixin, self).event_stateChange()
+
+
 
 
 def timerFunc(self):
 	focus = api.getFocusObject()
 	if not isinstance(focus, TimerMixin): return
-	curFocus = None
-	checkFocus = focus.shouldMonitorFocusEvents
-	if checkFocus:
-		curFocus = focus
-	focusChanged = False
-	if checkFocus:
-		if not focus.focusObj == focus.getFocusObj():
-			eventHandler.queueEvent('gainFocus', focus.getFocusObj())
+	if focus.staticName != focus.name:
+		eventHandler.queueEvent('nameChange', focus)
+	if focus.staticValue != focus.value: 
+		eventHandler.queueEvent('valueChange', focus)
+	if focus.staticStates != focus.states:
+		eventHandler.queueEvent('stateChange', focus)
+	if focus.shouldMonitorCaretEvents:
+		try:
+			caret = focus.makeTextInfo(textInfos.POSITION_CARET)
+		except:
 			return
-		focusChanged = True
-	if not focusChanged:
-		if focus.staticName != focus.name:
-			eventHandler.queueEvent('nameChange', focus)
-		if focus.staticValue != focus.value: 
-			eventHandler.queueEvent('valueChange', focus)
-		if focus.staticStates != focus.states:
-			eventHandler.queueEvent('stateChange', focus)
-		if focus.shouldMonitorCaretEvents:
-			try:
-				caret = focus.makeTextInfo(textInfos.POSITION_CARET)
-			except:
-				return
-			if caret != focus.staticCaret:
-				eventHandler.queueEvent('caret', focus)
+		if caret != focus.staticCaret:
+			eventHandler.queueEvent('caret', focus)
+def focusTimerFunc(self):
+	global oldFocus
+	focus = api.getFocusObject()
+	realFocus = objectWithFocus()
+	if oldFocus == realFocus and canTrustFocusEvents:
+		return
+	
+	oldFocus = realFocus
+	t = 500 if canTrustFocusEvents else 0
+	if not (callLater.IsRunning() or realFocus == api.getFocusObject()):
+		callLater.Start(t, "gainFocus", realFocus, trustFocusEvents = False)
+
 timer = wx.Timer(gui.mainFrame)
 gui.mainFrame.Bind(wx.EVT_TIMER, handler = timerFunc, source = timer)
-#* Additions
+focusTimer = wx.Timer(gui.mainFrame)
+gui.mainFrame.Bind(wx.EVT_TIMER, handler = focusTimerFunc, source = focusTimer)
+
 class EnhancedUIATextInfo(UIA.UIATextInfo):
 	def _getFormatFieldAtRange(self, rangeObj, formatConfig, ignoreMixedValues = False):
 		old = None
@@ -389,12 +431,11 @@ class NewEditTextInfo(window.edit.EditTextInfo):
 		except:
 			return('')
 class Edit(edit.UnidentifiedEdit, Win32):
-	shouldMonitorCaretEvents = True
 	baseRole = controlTypes.Role.EDITABLETEXT
 	def _get_name(self):
 		return(winUser.getWindowText(self.windowHandle))
 	def _get_TextInfo(self):
-		info = super(Edit, self)._get_TextInfo()
+		info = super(Edit, self).TextInfo
 		if info == edit.EditTextInfo:
 			return(NewEditTextInfo)
 		return(info)
@@ -405,6 +446,14 @@ class Edit(edit.UnidentifiedEdit, Win32):
 	@classmethod
 	def kwargsFromSuper(cls, kwargs, relation = None):
 		return(True)
+class DisplayModelEdit(Edit):
+	# Translators: a option in a combo box
+	displayName = _("display text edit")
+	def _get_TextInfo(self):
+		return(displayModel.EditableTextDisplayModelTextInfo)
+	@classmethod
+	def kwargsFromSuper(cls, kwargs, relation = None):
+		return True
 #* button support
 #** button messages.
 BM_GETCHECK = 240
@@ -447,6 +496,7 @@ class Text(Win32):
 	@classmethod
 	def kwargsFromSuper(*args, **kwargs):
 		return(True)
+#* support for unknown controls
 class Unknown(Win32):
 	baseRole = controlTypes.Role.UNKNOWN
 	cachedSelectionColor = None
@@ -526,6 +576,7 @@ classNamesToNVDAControlTypeNames = {}
 supportedClasses = [
 	Slider,
 	Edit,
+	DisplayModelEdit,
 	Button,
 	CheckBox,
 	RadioButton,
@@ -535,8 +586,8 @@ supportedClasses = [
 configNamesToClasses = {}
 for i in supportedClasses:
 	configNamesToClasses.update({i.__name__: i})
-	supportedControls.append(i.baseRole.displayString)
-	classNamesToNVDAControlTypeNames.update({i.__name__: i.baseRole.displayString})
+	supportedControls.append(i.baseRole.displayString if not i.displayName else i.displayName)
+	classNamesToNVDAControlTypeNames.update({i.__name__: i.baseRole.displayString if not i.displayName else i.displayName})
 supportedControls.sort()
 # Translators: an option in a combo box
 supportedControls.insert(0, _('Use normal add-on behavior'))
@@ -648,12 +699,21 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		f.close()
 		self.displayObj = None
 		config.post_configSave.register(saveConfig)
+		gui.settingsDialogs.NVDASettingsDialog.categoryClasses.append(EnhancedControlSupportSettingsPanel)
 	def terminate(self):
 		super(GlobalPlugin, self).terminate()
 		window.Window.getPossibleAPIClasses = oldGetPossibleAPIClasses
 		IAccessibleHandler.winEventToNVDAEvent = oldWinEventToNVDAEvent
 		UIAHandler.UIAHandler.isUIAWindow = oldIsUIAWindow
 		IAccessibleHandler.processFocusWinEvent = oldProcessFocusWinEvent
+		gui.settingsDialogs.NVDASettingsDialog.categoryClasses.remove(EnhancedControlSupportSettingsPanel)
+	def event_gainFocus(self, obj, nextHandler, trustFocusEvents = True):
+		global oldFocus
+		global canTrustFocusEvents
+		oldFocus = objectWithFocus()
+		canTrustFocusEvents = trustFocusEvents
+		callLater.Stop()
+		nextHandler()
 	def chooseNVDAObjectOverlayClasses(self, obj, clsList):
 		conf = getConfigFromWindow(obj.windowHandle)
 		isEditable = False
@@ -679,7 +739,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 					break
 				if issubclass(i, window.Window) and not issubclass(i, Win32):
 					clsList.remove(i)
-		if conf and conf[0] == 'UIA':
+		if conf and conf[0] in ["UIA", "enhancedUIA"]:
 			for i in copyList:
 				if issubclass(i, IAccessible.IAccessible) and i != IAccessible.IAccessible:
 					clsList.remove(i)
@@ -692,12 +752,15 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			return()
 		if conf:
 			return
+		if not (config.conf["enhancedControlSupport"]["trustEvents"]) or config.conf["enhancedControlSupport"]["focusEnhancement"]:
+			clsList.insert(0, TimerMixin)
 		if not IAccessible.ContentGenericClient in clsList: # NVDA seams to recognise this window, so continue as normal.
 			return()
 		# NVDA doesn't recognise this window
 		cls = findSupportedClass(obj.windowHandle)
 		clsList.remove(IAccessible.ContentGenericClient)
-		clsList.insert(0, TimerMixin)
+		if not TimerMixin in clsList:
+			clsList.insert(0, TimerMixin)
 		clsList.insert(0, cls)
 	@script(
 		# Translators: Describes the select control type script
