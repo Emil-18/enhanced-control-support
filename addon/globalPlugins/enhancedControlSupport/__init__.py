@@ -247,8 +247,8 @@ class Win32(window.Window):
 
 	def _get_states(self):
 		states = super(Win32, self).states
-		focus = api.getFocusObject().windowHandle
-		if self.windowHandle == focus:
+		focus = api.getFocusObject()
+		if self == focus:
 			states.add(controlTypes.State.FOCUSED)
 		return(states)
 	def _get_keyboardShortcut(self):
@@ -265,6 +265,19 @@ class Win32(window.Window):
 		if letter:
 			return(shortcut+letter)
 		return('')
+
+class Complex(Win32):
+	def __init__(self, windowHandle = None, parent = None):
+		self.parent = parent
+		super(Complex, self).__init__(windowHandle = windowHandle)
+	isComplex = True
+	def _get_firstChild(self):
+		return(None)
+	def _get_lastChild(self):
+		return(None)
+	def _get_presentationType(self):
+		return(self.presType_content)
+
 class TimerMixin(NVDAObject):
 	def _get_shouldMonitorFocusEvents(self):
 		if config.conf["enhancedControlSupport"]["focusEnhancement"]:
@@ -339,8 +352,9 @@ def focusTimerFunc(self):
 	
 	oldFocus = realFocus
 	t = 500 if canTrustFocusEvents else 0
+	realFocus.trustFocusEvents = False
 	if not (callLater.IsRunning() or realFocus == api.getFocusObject()):
-		callLater.Start(t, "gainFocus", realFocus, trustFocusEvents = False)
+		callLater.Start(t, "gainFocus", realFocus)
 
 timer = wx.Timer(gui.mainFrame)
 gui.mainFrame.Bind(wx.EVT_TIMER, handler = timerFunc, source = timer)
@@ -501,23 +515,86 @@ class Text(Win32):
 	def kwargsFromSuper(*args, **kwargs):
 		return(True)
 #* support for unknown controls
+class DisplayChunk(Complex):
+	def __init__(self, windowHandle = None, info = None, parent = None, unit = displayModel.UNIT_DISPLAYCHUNK):
+		super(DisplayChunk, self).__init__(windowHandle = windowHandle, parent = parent)
+		if info.isCollapsed:
+			info.expand(unit)
+		self.textInfo = info
+		self.unit = unit
+	def _get_name(self):
+		return(self.textInfo.text)
+	def _isEqual(self, other):
+		return(self.textInfo == other.textInfo)
+	def _get_role(self):
+		return(controlTypes.Role.STATICTEXT)
+	def _get_location(self):
+		startLocation = self.textInfo._getBoundingRectFromOffset(self.textInfo._startOffset)
+		endOffset = self.textInfo._endOffset
+		rect = None
+		for i in range(endOffset, 0, -1):
+		# one of the end locations is sometimes lesser than the start location.
+		# I think this happens because the application draws a new line in the same operation it drew the text.
+		#so move the offset back 1 character at the time until it works
+			try:
+				endLocation = self.textInfo._getBoundingRectFromOffset(i).toLTRB()
+				rect = locationHelper.RectLTRB(startLocation.left, startLocation.top, endLocation.right, endLocation.bottom).toLTWH()
+				break
+			except:
+#				from logHandler import log; log.error(ex)
+				pass
+		return(rect)
+	def _move(self, direction):
+		info = self.textInfo.copy()
+		moved = False
+		while info.move(self.unit, direction):
+			info.expand(self.unit)
+			if info.text and not info.text.isspace():
+				moved = True
+				break
+		if moved:
+			obj = DisplayChunk(windowHandle = self.windowHandle, info = info, parent = self.parent)
+			return(obj)
+	def _get_next(self):
+		return(self._move(1))
+	def _get_previous(self):
+		return(self._move(-1))
 class Unknown(Win32):
 	baseRole = controlTypes.Role.UNKNOWN
 	cachedSelectionColor = None
 	cachedBGSelectionColor = None
+	isComplex = True
 	def _get_name(self):
-		name = None
+		return("")
+	def _get_selectionTextInfo(self):
+		info = None
 		try:
-			name = displayModel.DisplayModelTextInfo(self, textInfos.POSITION_SELECTION).text
+			info = displayModel.DisplayModelTextInfo(self, textInfos.POSITION_SELECTION)
 		except:
 			pass
-		if name:
-			return(name)
 		try:
-			name = DynamicSelectionTextInfo(self, textInfos.POSITION_SELECTION).text
+			info = DynamicSelectionTextInfo(self, textInfos.POSITION_SELECTION)
 		except:
-			name = ''
-		return(name)
+			pass
+		return(info)
+	def _get_focusRedirect(self):
+		info = self.selectionTextInfo
+		if info:
+			obj = DisplayChunk(windowHandle = self.windowHandle, info = info, parent = self)
+			return(obj)
+	def _get_firstChild(self):
+		if not self.displayText:
+			return
+		info = DynamicSelectionTextInfo(self, textInfos.POSITION_FIRST)
+		obj = DisplayChunk(windowHandle = self.windowHandle, info = info, parent = self)
+		return(obj)
+	def _get_lastChild(self):
+		if not self.displayText:
+			return
+		info = DynamicSelectionTextInfo(self, textInfos.POSITION_LAST)
+		obj = DisplayChunk(windowHandle = self.windowHandle, info = info, parent = self)
+		return(obj)
+
 	def _get_presentationType(self):
 		return(self.presType_content)
 	def event_gainFocus(self):
@@ -715,8 +792,9 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		global oldFocus
 		global canTrustFocusEvents
 		oldFocus = objectWithFocus()
-		canTrustFocusEvents = trustFocusEvents
-		callLater.Stop()
+		canTrustFocusEvents = not hasattr(obj, "trustFocusEvents")
+		if canTrustFocusEvents:
+			callLater.Stop()
 		nextHandler()
 	def chooseNVDAObjectOverlayClasses(self, obj, clsList):
 		conf = getConfigFromWindow(obj.windowHandle)
