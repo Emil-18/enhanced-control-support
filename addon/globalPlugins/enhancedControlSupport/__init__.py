@@ -279,6 +279,21 @@ class Complex(Win32):
 		return(self.presType_content)
 
 class TimerMixin(NVDAObject):
+
+	# Sometimes, accessibillity APIs considers the same onscreen object to not be equal to itself.
+	# This causes the TimerMixin class to continuously fire focus events on the same object over and over.
+	# So we implement more checks here
+	def _isEqual(self, other):
+		eq = super(TimerMixin, self)._isEqual(other)
+		if eq:
+			return(eq)
+		props = [
+			self.name == other.name,
+			self.role == other.role,
+			self.positionInfo == other.positionInfo,
+			self.location == other.location
+		]
+		return(all(props))
 	def _get_shouldMonitorFocusEvents(self):
 		if config.conf["enhancedControlSupport"]["focusEnhancement"]:
 			return(True)
@@ -347,8 +362,6 @@ def focusTimerFunc(self):
 	global oldFocus
 	focus = api.getFocusObject()
 	realFocus = objectWithFocus()
-	if oldFocus == realFocus and canTrustFocusEvents:
-		return
 	
 	oldFocus = realFocus
 	t = 500 if canTrustFocusEvents else 0
@@ -606,8 +619,8 @@ class Unknown(Win32):
 			displayModel.requestTextChangeNotifications(self, 0)
 		return(super(Unknown, self).event_loseFocus())
 
-	def event_textChange(self):
-		eventHandler.executeEvent('nameChange', self)
+	#def event_textChange(self):
+		#eventHandler.executeEvent('nameChange', self)
 	@classmethod
 	def kwargsFromSuper(*args, **kwargs):
 		return(True)
@@ -806,7 +819,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			clsList.insert(0, EnhancedTypingMixin)
 		if obj.windowClassName.startswith("HwndWrapper") and isEditable and not conf:
 			clsList.insert(0, EnhancedTypingMixin)
-		if issubclass(obj.APIClass, UIA.UIA):
+		if issubclass(obj.APIClass, UIA.UIA) and UIA.UIA in clsList:
 			if conf and conf[0] == "enhanced UIA":
 				index = 0
 			else:
