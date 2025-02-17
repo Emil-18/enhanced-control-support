@@ -1,5 +1,5 @@
 # coding: utf-8
-# Copyright 2023 - 2024 Emil-18
+# Copyright 2023 - 2025 Emil-18
 # An add-on that enhances support for controls that normaly don't work well with NVDA
 # This add-on is licensed under the same license as NVDA. See the copying.txt file for more information
 
@@ -8,8 +8,10 @@ import addonHandler
 addonHandler.initTranslation()
 import api
 import appModuleHandler
+import ctypes
 import config
 import controlTypes
+import copy
 import displayModel
 import editableText
 import eventHandler
@@ -27,10 +29,12 @@ import threading
 import tones
 import ui
 import UIAHandler
+from watchdog import cancellableSendMessage
 import winUser
+import winKernel
 import wx
 from ctypes import *
-from ctypes.wintypes import POINT, WPARAM, LPARAM
+from ctypes.wintypes import *
 from globalVars import appPid
 from gui.settingsDialogs import SettingsDialog
 from NVDAObjects import *
@@ -55,6 +59,12 @@ callLater.Stop()
 user32 = windll.user32
 kernel32 = windll.kernel32
 oleacc = windll.oleacc
+#* dll function types
+kernel32.VirtualAllocEx.restype = c_void_p
+kernel32.VirtualAllocEx.argtypes = [HANDLE, c_void_p, c_void_p, DWORD, DWORD]
+kernel32.WriteProcessMemory.argtypes = [HANDLE, c_void_p, c_void_p, c_longlong, c_void_p]
+kernel32.ReadProcessMemory.argtypes = [HANDLE, c_void_p, c_void_p, c_longlong, c_void_p]
+
 #* config
 confSpec = {
 	"trustEvents":"boolean(default=False)",
@@ -83,6 +93,15 @@ class EnhancedControlSupportSettingsPanel(gui.SettingsPanel):
 		config.conf["enhancedControlSupport"]["trustEvents"] = self.trustEvents.GetValue()
 		config.conf["enhancedControlSupport"]["focusEnhancement"] = self.focusEnhancement.GetValue()
 #* helper functions
+def shouldUseTimerMixin(conf, obj, clsList):
+	for i in clsList:
+		if issubclass(i, Complex) or (issubclass(i, Win32) and not conf):
+			return(True)
+	if conf and not conf[1]:
+		return(True)
+	if not config.conf["enhancedControlSupport"]["trustEvents"]:
+		return(True)
+	return(False)
 def objectWithFocus():
 	realFocus = NVDAObject.objectWithFocus()
 	if realFocus.role in [
@@ -100,7 +119,33 @@ def objectWithFocus():
 				realFocus = i
 				break
 	return(realFocus)
-
+def clientRectToScreenRect(window, rect):
+	point1 = POINT(rect.left, rect.top)
+	point2 = POINT(rect.right, rect.bottom)
+	user32.ClientToScreen(window, c_void_p(addressof(point1)))
+	user32.ClientToScreen(window, c_void_p(addressof(point2)))
+	newRect = RECT(point1.x, point1.y, point2.x, point2.y)
+	return(newRect)
+def sendMessageInProcess(hwnd, msg, wParam, lParam, localBuffer, size):
+	MEM_RESERVE = 0x00002000
+	processHandle = oleacc.GetProcessHandleFromHwnd(hwnd)
+	if not processHandle:
+		return
+	# Alloc memory in the process owning hwnd
+	internalBuff = kernel32.VirtualAllocEx(processHandle, 0, size, winKernel.MEM_COMMIT, winKernel.PAGE_READWRITE)
+	if not internalBuff:
+		return
+	# Write the given structure into the processes memory, in case it is neaded.
+	kernel32.WriteProcessMemory(processHandle, internalBuff, localBuffer, size, 0)
+	# Send the message
+	res = cancellableSendMessage(hwnd, msg, wParam if wParam != localBuffer else internalBuff, lParam if lParam != localBuffer else internalBuff)
+	# Turn res into a signed value
+	res = c_longlong(res).value
+	# Read the structure back into the local buffer
+	kernel32.ReadProcessMemory(processHandle, internalBuff, localBuffer, size, 0)
+	# Free the memory
+	kernel32.VirtualFreeEx(processHandle, internalBuff, 0, winKernel.MEM_RELEASE)
+	return(res)
 cachedAppNames = {}
 notWin32 = ('MSAA', 'UIA', "enhanced UIA", 'normal')
 def getKeyFromWindow(windowHandle, bypassDisabled = False):
@@ -133,11 +178,11 @@ def findSupportedClass(windowHandle):
 	if length == 1:
 		cls = supported[0]
 		return(cls)
-	# No class or multiple classes gave True, so look at their names and check if the window class include their name
+	# No class or multiple classes gave True, so look at their names if the class allows it and check if the window class include their name
 	className = winUser.getClassName(windowHandle)
 	supportedNames = []
 	for i in supportedClasses:
-		if i.__name__.lower() in className.lower() and not i.shouldLookAtClassName:
+		if i.__name__.lower() in className.lower() and i.shouldLookAtClassName:
 			supportedNames.append(i)
 	if len(supportedNames) == 1:
 		cls = supportedNames[0]
@@ -146,61 +191,25 @@ def findSupportedClass(windowHandle):
 	return(cls)
 	
 #* redefinitions
-oldGetPossibleAPIClasses = window.Window.getPossibleAPIClasses
-@classmethod
-def newGetPossibleAPIClasses(cls, kwargs, relation = None):
-	windowHandle = kwargs['windowHandle']
-	if shouldUseWin32(windowHandle):
-		yield(Win32)
-		return()
-	for i in oldGetPossibleAPIClasses(kwargs, relation = relation):
-		yield(i)
-oldWinEventToNVDAEvent = IAccessibleHandler.winEventToNVDAEvent
-def newWinEventToNVDAEvent(eventID, window, objectID, childID, useCache = True):
-	try:
-		old = oldWinEventToNVDAEvent(eventID, window, objectID, childID, useCache)
-	except:
-		old = False
-	if not shouldUseWin32(window) or not old:
-		return(old)
-	name = old[0]
 
-	cls = configNamesToClasses[getConfigFromWindow(window)[0]]
-	index = childID - cls.winEventToIndex
-	obj = cls(windowHandle = window)
-	if obj.subClass:
-		obj = obj.subClass(windowHandle = windowHandle, index = index)
-	return(name, obj)
-
-oldProcessFocusWinEvent = IAccessibleHandler.processFocusWinEvent
-def newProcessFocusWinEvent(window, objectID, childID, force = False):
-	try:
-		return(oldProcessFocusWinEvent(window, objectID, childID, force = force))
-	except:
-		pass
-	event = IAccessibleHandler.winEventToNVDAEvent(winUser.EVENT_OBJECT_FOCUS, window, objectID, childID, useCache = False)
-	if not event:
-		return(False)
-	IAccessibleHandler.processFocusNVDAEvent(event[1], force = force)
-	return(True)
 oldIsUIAWindow = UIAHandler.UIAHandler.isUIAWindow
 def newIsUIAWindow(self, windowHandle, *args, **kwargs):
 	conf = getConfigFromWindow(windowHandle)
-	if not conf:
+	if not conf or shouldUseWin32(windowHandle):
 		return(oldIsUIAWindow(self, windowHandle, *args, **kwargs))
 	if conf and conf[0] == "normal":
 		return(oldIsUIAWindow(self, windowHandle, *args, **kwargs))
 	cls = conf[0]
-	if shouldUseWin32(windowHandle) or cls in notWin32 and cls not in ["UIA", "enhanced UIA"]:
+	if cls not in ["UIA", "enhanced UIA"]:
 		return(False)
 	return(True)
 
 #* Additions
+
 class Win32(window.Window):
 	'''
 	Support for win32 controls that don't support IAccessible
 	'''
-	winEventToIndex = 0
 	shouldLookAtClassName = True
 	displayName = None
 	isComplex = False # The control has other controls that NVDA should treat as NVDAObjects inside of it, such as a list.
@@ -211,6 +220,7 @@ class Win32(window.Window):
 		return(self.baseRole)
 	def _get_win32Name(self):
 		return(self.windowText)
+
 	def doWindowAction(self):
 		pass
 	def click(self):
@@ -224,21 +234,14 @@ class Win32(window.Window):
 			mouseHandler.doPrimaryClick()
 		winUser.setCursorPos(*mousePos)
 		return(True)
+	def _get_children(self):
+		return(NVDAObject._get_children(self))
 	def doAction(self, index = None):
 		if not self.click():
 			self.doWindowAction()
 	@staticmethod
 	def isSupported(windowHandle):
 		return(False)
-
-	@classmethod
-	def getPossibleAPIClasses(cls, kwargs, relation = None):
-		handle = kwargs.get('windowHandle')
-		c = getConfigFromWindow(handle)[0]
-		yield configNamesToClasses[c]
-	@classmethod
-	def kwargsFromSuper(cls, kwargs, relation = None):
-		return(True)
 	def _get_name(self):
 		name = self.displayText
 		if not name or name.isspace() or len(name) >500:
@@ -246,7 +249,7 @@ class Win32(window.Window):
 		return(name)
 
 	def _get_states(self):
-		states = super(Win32, self).states
+		states = window.Window._get_states(self)
 		focus = api.getFocusObject()
 		if self == focus:
 			states.add(controlTypes.State.FOCUSED)
@@ -265,10 +268,62 @@ class Win32(window.Window):
 		if letter:
 			return(shortcut+letter)
 		return('')
-
+	# Get rid of all the properties from the Accessibillity API that we don't need or use, so we only rely on the information fetched directly from the window.
+	def _get_description(self):
+		return("")
+	def _get_location(self):
+		return(window.Window._get_location(self))
+	def _isEqual(self, other):
+		return(window.Window)._isEqual(self, other)
+	def _get_positionInfo(self):
+		return(dict())
+	next = previous = None
+	def _get_firstChild(self):
+		return(window.Window._get_firstChild(self))
+	def _get_lastChild(self):
+		return(window.Window._get_lastChild(self))
+	def _get_parent(self):
+		parent = window.Window(windowHandle = self.windowHandle)
+		if parent == self:
+			parent = window.Window._get_parent(self)
+		return(parent)
+	def _get_treeInterceptor(self):
+		return
+	def _get_value(self):
+		return("")
+	def _get_TextInfo(self):
+		return(NVDAObjectTextInfo)
+	# If we treat an object with a caret as an object type with no caret, it may cause errors.
+	def event_caret(self):
+		if self.TextInfo == NVDAObjectTextInfo:
+			return
+		super(Win32, self).event_caret()
+	def _get_child(self, child):
+		return(self.children[child])
+class ComplexParent(Win32):
+	def _get_name(self):
+		return("")
+	def _get_subClass(self):
+		return(None)
+	def _get_childCount(self):
+		return(0)
+	isComplex = True
+	def _get_firstChild(self):
+		if not self.childCount:
+			return
+		return(self.subClass(windowHandle = self.windowHandle, parent = self, index = 0))
+	def _get_lastChild(self):
+		return(self.subClass(windowHandle = self.windowHandle, parent = self, index = self.childCount-1))
+	def _get_focusIndex(self):
+		return(0)
+	def _get_focusRedirect(self):
+		if not self.childCount:
+			return
+		return(self.subClass(windowHandle = self.windowHandle, parent = self, index = self.focusIndex))
 class Complex(Win32):
-	def __init__(self, windowHandle = None, parent = None):
+	def __init__(self, windowHandle = None, parent = None, index = None):
 		self.parent = parent
+		self.index = index
 		super(Complex, self).__init__(windowHandle = windowHandle)
 	isComplex = True
 	def _get_firstChild(self):
@@ -277,13 +332,26 @@ class Complex(Win32):
 		return(None)
 	def _get_presentationType(self):
 		return(self.presType_content)
-
+	def _get_next(self):
+		childCount = self.parent.childCount
+		index = self.index
+		if index >= childCount-1:
+			return
+		return(self.parent.subClass(windowHandle = self.windowHandle, parent = self.parent, index = index+1))
+	def _get_previous(self):
+		index = self.index
+		if index <= 0:
+			return
+		return(self.parent.subClass(windowHandle = self.windowHandle, parent = self.parent, index = index-1))
+	def _get_positionInfo(self):
+		return({"indexInGroup": self.index+1, "similarItemsInGroup": self.parent.childCount})
+		
 class TimerMixin(NVDAObject):
 
 	# Sometimes, accessibillity APIs considers the same onscreen object to not be equal to itself.
 	# This causes the TimerMixin class to continuously fire focus events on the same object over and over.
 	# So we implement more checks here
-	def _isEqual(self, other):
+	def isEqual(self, other):
 		eq = super(TimerMixin, self)._isEqual(other)
 		if eq:
 			return(eq)
@@ -449,9 +517,7 @@ class Slider(Win32):
 	def isSupported(windowHandle):
 		res = winUser.sendMessage(windowHandle, TBM_GETRANGEMAX, 0, 0)
 		return(bool(res))
-	@classmethod
-	def kwargsFromSuper(cls, kwargs, relation = None):
-		return(True)
+
 #* edit support
 #** edit messages
 EM_GETLINECOUNT = 186
@@ -474,17 +540,14 @@ class Edit(edit.UnidentifiedEdit, Win32):
 	def isSupported(windowHandle):
 		res = winUser.sendMessage(windowHandle, EM_GETLINECOUNT, 0, 0)
 		return(bool(res))
-	@classmethod
-	def kwargsFromSuper(cls, kwargs, relation = None):
-		return(True)
+
 class DisplayModelEdit(Edit):
-	# Translators: a option in a combo box
+	shouldLookAtClassName = False
+	# Translators: an option in a combo box
 	displayName = _("display text edit")
 	def _get_TextInfo(self):
 		return(displayModel.EditableTextDisplayModelTextInfo)
-	@classmethod
-	def kwargsFromSuper(cls, kwargs, relation = None):
-		return True
+
 #* button support
 #** button messages.
 BM_GETCHECK = 240
@@ -497,12 +560,7 @@ class Button(Win32):
 		return(string)
 	def doWindowAction(self, index = None):
 		winUser.sendMessage(self.windowHandle, BM_CLICK, 0, 0)
-	@staticmethod
-	def isSupported(windowHandle):
-		return(False)
-	@classmethod
-	def kwargsFromSuper(*args, **kwargs):
-		return(True)
+
 class CheckBox(Button):
 	baseRole = controlTypes.Role.CHECKBOX
 	def _get_states(self):
@@ -513,20 +571,50 @@ class CheckBox(Button):
 		elif res == 2:
 			states.add(controlTypes.State.HALFCHECKED)
 		return(states)
-	@classmethod
-	def kwargsFromSuper(*args, **kwargs):
-		return(True)
-		
+
 class RadioButton(CheckBox):
 	baseRole = controlTypes.Role.RADIOBUTTON
-	@classmethod
-	def kwargsFromSuper(*args, **kwargs):
-		return(True)
 class Text(Win32):
 	baseRole = controlTypes.Role.STATICTEXT
-	@classmethod
-	def kwargsFromSuper(*args, **kwargs):
-		return(True)
+#* Tab control support
+#** tab control messages
+TCM_FIRST = 0x1300
+TCM_GETITEMRECT = TCM_FIRST+10
+TCM_GETCURFOCUS = TCM_FIRST+47
+TCM_GETCURSEL = TCM_FIRST+11
+TCM_GETITEMCOUNT = TCM_FIRST+4
+TCM_HITTEST = TCM_FIRST+13
+TCM_SETCURFOCUS = TCM_FIRST+48
+TCM_GETITEMA = TCM_FIRST+5
+TCM_GETITEMW = TCM_FIRST+60
+#** tab control structures
+TCIF_TEXT = 0x0001
+class TCITEMW(Structure):
+	_fields_ = [
+		("mask", c_uint),
+		("state", DWORD),
+		("stateMask", DWORD),
+		("text", c_wchar_p),
+		("textMax", c_int),
+		("image", c_int),
+		("lParam", LPARAM)
+	]
+class Tab(ComplexParent):
+	baseRole = controlTypes.Role.TABCONTROL
+	def _get_childCount(self):
+		return(user32.SendMessageW(self.windowHandle, TCM_GETITEMCOUNT, 0, 0))
+	def _get_subClass(self):
+		return(TabItem)
+	def _get_focusIndex(self):
+		return(user32.SendMessageW(self.windowHandle, TCM_GETCURFOCUS, 0, 0))
+class TabItem(Complex):
+	def _get_role(self):
+		return(controlTypes.Role.TAB)
+	def _get_location(self):
+		rect = RECT()
+		sendMessageInProcess(self.windowHandle, TCM_GETITEMRECT, self.index, addressof(rect), addressof(rect), sizeof(rect))
+		rect = clientRectToScreenRect(self.windowHandle, rect)
+		return(locationHelper.RectLTWH.fromCompatibleType(rect))
 #* support for unknown controls
 class DisplayChunk(Complex):
 	def __init__(self, windowHandle = None, info = None, parent = None, unit = displayModel.UNIT_DISPLAYCHUNK):
@@ -610,20 +698,10 @@ class Unknown(Win32):
 
 	def _get_presentationType(self):
 		return(self.presType_content)
-	def event_gainFocus(self):
-		if not isinstance(self, TimerMixin):
-			displayModel.requestTextChangeNotifications(self, 1)
-		return(super(Unknown, self).event_gainFocus())
-	def event_loseFocus(self):
-		if not isinstance(self, TimerMixin):
-			displayModel.requestTextChangeNotifications(self, 0)
-		return(super(Unknown, self).event_loseFocus())
 
 	#def event_textChange(self):
 		#eventHandler.executeEvent('nameChange', self)
-	@classmethod
-	def kwargsFromSuper(*args, **kwargs):
-		return(True)
+
 class DynamicSelectionTextInfo(displayModel.DisplayModelTextInfo):
 	def _getColor(self, background = False):
 		if not background:
@@ -675,6 +753,7 @@ supportedClasses = [
 	CheckBox,
 	RadioButton,
 	Text,
+	Tab,
 	Unknown
 ]
 configNamesToClasses = {}
@@ -748,6 +827,7 @@ class ControlDialog(SettingsDialog):
 			self.choice.SetSelection(index)
 			eventSupport = conf[1]
 			self.checkBox.SetValue(eventSupport)
+			# Backword compatibility with erlier versions of the addon
 			if len(conf) <= 2:
 				conf.append(False)
 			enhancedTyping = conf[2]
@@ -776,10 +856,7 @@ class ControlDialog(SettingsDialog):
 class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	def __init__(self):
 		super(GlobalPlugin, self).__init__()
-		window.Window.getPossibleAPIClasses = newGetPossibleAPIClasses
-		IAccessibleHandler.winEventToNVDAEvent = newWinEventToNVDAEvent
 		UIAHandler.UIAHandler.isUIAWindow = newIsUIAWindow
-		IAccessibleHandler.processFocusWinEvent = newProcessFocusWinEvent
 		global cfg
 		try:
 			open(configPath, 'x')
@@ -796,10 +873,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		gui.settingsDialogs.NVDASettingsDialog.categoryClasses.append(EnhancedControlSupportSettingsPanel)
 	def terminate(self):
 		super(GlobalPlugin, self).terminate()
-		window.Window.getPossibleAPIClasses = oldGetPossibleAPIClasses
-		IAccessibleHandler.winEventToNVDAEvent = oldWinEventToNVDAEvent
 		UIAHandler.UIAHandler.isUIAWindow = oldIsUIAWindow
-		IAccessibleHandler.processFocusWinEvent = oldProcessFocusWinEvent
 		gui.settingsDialogs.NVDASettingsDialog.categoryClasses.remove(EnhancedControlSupportSettingsPanel)
 	def event_gainFocus(self, obj, nextHandler, trustFocusEvents = True):
 		global oldFocus
@@ -810,13 +884,39 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			callLater.Stop()
 		nextHandler()
 	def chooseNVDAObjectOverlayClasses(self, obj, clsList):
+		if not isinstance(obj, window.Window):
+			return
+		newCls = None
 		conf = getConfigFromWindow(obj.windowHandle)
+		if conf and conf[0] == "normal":
+			return
 		isEditable = False
-		for i in clsList:
-			if issubclass(i, editableText.EditableText):
-				isEditable = True
-		if isEditable and conf and conf[2]:
-			clsList.insert(0, EnhancedTypingMixin)
+		if conf or IAccessible.ContentGenericClient in clsList:
+			
+			if shouldUseWin32(obj.windowHandle) and IAccessible.WindowRoot not in clsList and not isinstance(obj, Complex):
+				newCls = configNamesToClasses[conf[0]]
+			elif IAccessible.ContentGenericClient in clsList:
+				newCls = findSupportedClass(obj.windowHandle)
+			if newCls:
+				for i in clsList.copy():
+					if i == obj.APIClass or i in newCls.mro():
+						continue
+					clsList.remove(i)
+				clsList.insert(0, newCls)
+				# Since all classes from global plugins that was in clsList are now removed,
+				# go through each global plugin that earlier added classes to clsList and let it evaluate the object again.
+				for i in globalPluginHandler.runningPlugins:
+					if isinstance(i, GlobalPlugin): break
+
+					try:
+						i.chooseNVDAObjectOverlayClasses(obj, clsList)
+					except:
+						pass
+			for i in clsList:
+				if issubclass(i, editableText.EditableText):
+					isEditable = True
+			if isEditable and conf and conf[2]:
+				clsList.insert(0, EnhancedTypingMixin)
 		if obj.windowClassName.startswith("HwndWrapper") and isEditable and not conf:
 			clsList.insert(0, EnhancedTypingMixin)
 		if issubclass(obj.APIClass, UIA.UIA) and UIA.UIA in clsList:
@@ -827,13 +927,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			if not (conf and conf[0] == "normal"):
 				clsList.insert(index, EnhancedUIASupport)
 		copyList = clsList.copy()
-		if conf and shouldUseWin32(obj.windowHandle) and issubclass(obj.APIClass, Win32):
-			# Remove as many unnecessary subclasses as possible, to reduce the chanse of errors
-			for i in copyList:
-				if i == window.Window:
-					break
-				if issubclass(i, window.Window) and not issubclass(i, Win32):
-					clsList.remove(i)
+
 		if conf and conf[0] in ["UIA", "enhancedUIA"]:
 			for i in copyList:
 				if issubclass(i, IAccessible.IAccessible) and i != IAccessible.IAccessible:
@@ -842,21 +936,11 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			for i in copyList:
 				if issubclass(i, UIA.UIA) and i != UIA.UIA:
 					clsList.remove(i)
-		if conf and not conf[1]:
+		# Check if any of the classes in clsList is a subclass of Complex
+		# If they are, we are in an unknown control, and should not rely on events
+		if shouldUseTimerMixin(conf, obj, clsList):
 			clsList.insert(0, TimerMixin)
-			return()
-		if conf:
-			return
-		if not config.conf["enhancedControlSupport"]["trustEvents"]:
-			clsList.insert(0, TimerMixin)
-		if not IAccessible.ContentGenericClient in clsList: # NVDA seams to recognise this window, so continue as normal.
-			return()
-		# NVDA doesn't recognise this window
-		cls = findSupportedClass(obj.windowHandle)
-		clsList.remove(IAccessible.ContentGenericClient)
-		if not TimerMixin in clsList:
-			clsList.insert(0, TimerMixin)
-		clsList.insert(0, cls)
+
 	@script(
 		# Translators: Describes the select control type script
 		description = _('Lets you choose from a list of controls how NVDA will treat the control with focus. For example, choos \'button\' To tell NVDA to treat it as a button.'),
@@ -894,7 +978,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		nav = api.getNavigatorObject()
 		if not nav:
 			ui.message(translate('no navigator object'))
-			return()
+			return
 		self.script_selectControlType(gesture, obj = nav)
 	@script(
 		# Translators: Describes the find control type script
@@ -902,6 +986,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		gesture = 'kb:nvda+alt+r'
 	)
 	def script_findControlType(self, gesture):
+		
 		if not getLastScriptRepeatCount():
 			windowHandle = api.getFocusObject().windowHandle
 		else:
