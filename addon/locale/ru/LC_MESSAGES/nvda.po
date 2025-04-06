@@ -1,0 +1,168 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: enhanced-control-support\n"
+"POT-Creation-Date: 2025-03-24 12:41+0300\n"
+"PO-Revision-Date: 2025-04-06 18:59+0500\n"
+"Last-Translator: \n"
+"Language-Team: Danil Kostenkov <danilkostenkov38@gmail.com>\n"
+"Language: ru_RU\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: Poedit 3.6\n"
+"X-Poedit-Basepath: ../../../..\n"
+"X-Poedit-SearchPath-0: .\n"
+"X-Poedit-SearchPath-1: addon/globalPlugins/enhancedControlSupport\n"
+
+#: __init__.py:345 addon/globalPlugins/enhancedControlSupport/__init__.py:559
+msgid "Press"
+msgstr "Нажать"
+
+#: __init__.py:425 addon/globalPlugins/enhancedControlSupport/__init__.py:766
+msgid "Use normal add-on behavior"
+msgstr "Использовать обычное поведение дополнения"
+
+#: __init__.py:429 addon/globalPlugins/enhancedControlSupport/__init__.py:773
+msgid "Use normal NVDA behavior"
+msgstr "Использовать обычное поведение NVDA"
+
+#: __init__.py:435 addon/globalPlugins/enhancedControlSupport/__init__.py:778
+msgid "Select control type"
+msgstr "Выберите тип элемента управления"
+
+#: __init__.py:451
+msgid "Select a control type. NVDA will behave as if "
+msgstr ""
+"Выберите тип элемента управления. NVDA будет вести себя так, как если бы "
+
+#: __init__.py:454
+msgid ""
+" and all similar controls in the same program are the control type you "
+"selected, for example, if you select button, all similar controls will be "
+"treated as buttons"
+msgstr ""
+" и все аналогичные элементы управления в одной и той же программе "
+"соответствуют выбранному вами типу элемента управления, например, если вы "
+"выберете кнопку, все аналогичные элементы управления будут рассматриваться "
+"как кнопки"
+
+#: __init__.py:458 addon/globalPlugins/enhancedControlSupport/__init__.py:803
+msgid "Control type:"
+msgstr "Тип элемента управления:"
+
+#: __init__.py:461 addon/globalPlugins/enhancedControlSupport/__init__.py:806
+msgid "rely on events. Only change if you know what you are doing"
+msgstr ""
+"полагаться на события. Меняйте только в том случае, если вы знаете, что "
+"делаете"
+
+#: __init__.py:465 addon/globalPlugins/enhancedControlSupport/__init__.py:814
+msgid "Temporarily use normal add-on behavior for all controls"
+msgstr ""
+"Временно использовать обычное поведение дополнения для всех элементов "
+"управления"
+
+#: __init__.py:580 addon/globalPlugins/enhancedControlSupport/__init__.py:946
+msgid ""
+"Lets you choose from a list of controls how NVDA will treat the control with "
+"focus. For example, choos 'button' To tell NVDA to treat it as a button."
+msgstr ""
+"Позволяет выбрать из списка элементов управления, как NVDA будет "
+"обрабатывать элемент управления в фокусе. Например, выберите \"кнопка\", "
+"чтобы указать NVDA обрабатывать его как кнопку."
+
+#: __init__.py:589 addon/globalPlugins/enhancedControlSupport/__init__.py:955
+msgid ""
+"You can not assign another control type to this object, because it has no "
+"assosiation with a control in Windows"
+msgstr ""
+"Вы не можете назначить этому объекту другой тип элемента управления, "
+"поскольку он не связан с элементом управления в Windows"
+
+#: __init__.py:592 addon/globalPlugins/enhancedControlSupport/__init__.py:958
+msgid ""
+"You can not assign another control type to any object contained within NVDA, "
+"because if done wrong, you may not be able to reverse the changes you have "
+"made"
+msgstr ""
+"Вы не можете назначить другой тип элемента управления ни одному объекту, "
+"содержащемуся в NVDA, поскольку, если это будет сделано неправильно, вы не "
+"сможете отменить внесённые изменения"
+
+#: __init__.py:600 addon/globalPlugins/enhancedControlSupport/__init__.py:974
+msgid ""
+"Lets you choose from a list of controls how NVDA will treat the control "
+"where the navigator object is located. For example, choos 'button' To tell "
+"NVDA to treat it as a button."
+msgstr ""
+"Позволяет выбрать из списка элементов управления, как NVDA будет "
+"обрабатывать элемент управления, в котором расположен объект навигатора. "
+"Например, выберите \"кнопка\", чтобы указать NVDA обрабатывать его как "
+"кнопку."
+
+#: __init__.py:611 addon/globalPlugins/enhancedControlSupport/__init__.py:985
+msgid ""
+"Tries to find out an report the type of the  control with focus. If pressed "
+"twice, information about the control where the navigator object is located "
+"will be reported instead"
+msgstr ""
+"Пытается определить тип элемента управления в фокусе. Если нажать дважды, "
+"вместо этого будет отображена информация об элементе управления, на котором "
+"находится объект навигатора"
+
+#: __init__.py:622 addon/globalPlugins/enhancedControlSupport/__init__.py:997
+msgid "Unable to find control type"
+msgstr "Не удаётся найти тип элемента управления"
+
+#: addon/globalPlugins/enhancedControlSupport/__init__.py:77
+msgid "Enhanced control support"
+msgstr "Расширенная поддержка элементов управления"
+
+#: addon/globalPlugins/enhancedControlSupport/__init__.py:88
+msgid ""
+"Use enhanced methods to detect where the focus is located (experimental)"
+msgstr ""
+"Использовать усовершенствованные методы для определения местоположения "
+"фокуса (экспериментально)."
+
+#: addon/globalPlugins/enhancedControlSupport/__init__.py:547
+msgid "display text edit"
+msgstr "редактирование отображаемого текста"
+
+#: addon/globalPlugins/enhancedControlSupport/__init__.py:770
+msgid "enhanced UIA"
+msgstr "расширенная UIA"
+
+#: addon/globalPlugins/enhancedControlSupport/__init__.py:792
+msgid "unlabeled"
+msgstr "без метки"
+
+#: addon/globalPlugins/enhancedControlSupport/__init__.py:796
+msgid "Select a control type. NVDA will behave as if"
+msgstr ""
+"Выберите тип элемента управления. NVDA будет вести себя так, как если бы"
+
+#: addon/globalPlugins/enhancedControlSupport/__init__.py:799
+msgid ""
+"and all similar controls in the same program are the control type you "
+"selected, for example, if you select button, all similar controls will be "
+"treated as buttons"
+msgstr ""
+"и все аналогичные элементы управления в одной и той же программе "
+"соответствуют выбранному вами типу элемента управления, например, если вы "
+"выберете кнопку, все аналогичные элементы управления будут рассматриваться "
+"как кнопки"
+
+#: addon/globalPlugins/enhancedControlSupport/__init__.py:810
+msgid "Use enhanced typing support"
+msgstr "Использовать улучшенную поддержку ввода текста"
+
+#: buildVars.py:23
+msgid "Enhanced Control Support"
+msgstr "Расширенная поддержка элементов управления"
+
+#: buildVars.py:26
+msgid "Adds support for more controls in NVDA."
+msgstr ""
+"Это дополнение добавляет поддержку большего количества элементов управления "
+"в NVDA."
