@@ -1124,26 +1124,26 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		# Check if any of the classes in clsList is a subclass of Complex
 		# If they are, we are in an unknown control, and should not rely on events
 
-		if not issubclass(obj.APIClass, Win32) and obj.APIClass not in (IAccessible.IAccessible, UIA.UIA, JAB.JAB):
-
+		if not issubclass(obj.APIClass, Win32) and not "kwargsFromSuper" in obj.APIClass.__dict__:
 			return
 		newCls = None
 
-		if conf and conf[0] == "normal":
+		if IAccessible.WindowRoot in clsList:
 			return
 		isEditable = False
 
 		if conf or IAccessible.ContentGenericClient in clsList:
 			
-			if shouldUseWin32(obj.windowHandle) and IAccessible.WindowRoot not in clsList and not issubclass(obj.APIClass, Win32):
+			if shouldUseWin32(obj.windowHandle) and not issubclass(obj.APIClass, Win32):
 				newCls = configNamesToClasses[conf[0]]
-			elif IAccessible.ContentGenericClient in clsList:
+			elif IAccessible.ContentGenericClient in clsList and not conf:
 				newCls = findSupportedClass(obj.windowHandle)
 			if newCls:
 				for i in clsList.copy():
-					if i == obj.APIClass or i in newCls.mro():
+					if i == obj.APIClass or i in obj.APIClass.mro():
 						continue
 					clsList.remove(i)
+				clsList.insert(0, Win32)
 				clsList.insert(0, newCls)
 				# Since all classes from global plugins that was in clsList are now removed,
 				# go through each global plugin that earlier added classes to clsList and let it evaluate the object again.
