@@ -63,9 +63,9 @@ roles = (
 	
 )
 #* needed dlls
-user32 = windll.user32
-kernel32 = windll.kernel32
-oleacc = windll.oleacc
+user32 = WinDLL("user32")
+kernel32 = WinDLL("kernel32")
+oleacc = WinDLL("oleacc")
 #* dll function types
 kernel32.VirtualAllocEx.restype = c_void_p
 kernel32.VirtualAllocEx.argtypes = [HANDLE, c_void_p, c_void_p, DWORD, DWORD]
@@ -101,6 +101,7 @@ class EnhancedControlSupportSettingsPanel(gui.SettingsPanel):
 		config.conf["enhancedControlSupport"]["focusEnhancement"] = self.focusEnhancement.GetValue()
 #* helper functions
 def shouldUseTimerMixin(conf, obj, clsList):
+
 	for i in clsList:
 		if issubclass(i, Complex) or (issubclass(i, Win32) and not conf):
 			return(True)
@@ -153,12 +154,14 @@ def sendMessageInProcess(hwnd, msg, wParam, lParam, localBuffer, size, shouldTry
 		# Send the message
 		res = cancellableSendMessage(hwnd, msg, wParam if wParam != localBuffer else internalBuff, lParam if lParam != localBuffer else internalBuff)
 		# Sometimes, SendMessage fails when it is given an address from none local memory.
-		localBuffer2 = cdll.msvcrt.malloc(size)
-		kernel32.ReadProcessMemory(processHandle, internalPointerToCheck, localBuffer2, size, 0)
-		if shouldTryWithLocalMemoryAddress and not cdll.msvcrt.memcmp(pointerToCheck, localBuffer2, size):
-			failed = True
-			res = cancellableSendMessage(hwnd, msg,wParam, lParam)
-		cdll.msvcrt.free(localBuffer2)
+		try:
+			localBuffer2 = cdll.msvcrt.malloc(size)
+			kernel32.ReadProcessMemory(processHandle, internalPointerToCheck, localBuffer2, size, 0)
+			if shouldTryWithLocalMemoryAddress and not cdll.msvcrt.memcmp(pointerToCheck, localBuffer2, size):
+				failed = True
+				res = cancellableSendMessage(hwnd, msg,wParam, lParam)
+		finally:
+			cdll.msvcrt.free(localBuffer2)
 
 		# Turn res into a signed value
 		res = c_long(res).value
@@ -309,7 +312,15 @@ class Win32(window.Window):
 		return(window.Window)._isEqual(self, other)
 	def _get_positionInfo(self):
 		return(dict())
-	next = previous = None
+	def _get_next(self):
+		if not getConfigFromWindow(self.windowHandle): # We do this so a user can navigate to things such as scrollbars, in a window that has been automaticly detected as another type
+			return(super(Win32, self).next)
+		return
+	def _get_previous(self):
+		if not getConfigFromWindow(self.windowHandle): # We do this so a user can navigate to things such as scrollbars, in a window that has been automaticly detected as another type
+			return(super(Win32, self).previous)
+		return
+
 	def _get_firstChild(self):
 		return(window.Window._get_firstChild(self))
 	def _get_lastChild(self):
@@ -336,6 +347,16 @@ class Win32(window.Window):
 		user32.SetForegroundWindow(self.windowHandle)
 class ComplexParent(Win32):
 	shouldLookAtClassName = False
+	def isValid(self, index):
+		childCount = self.childCount
+		if childCount:
+			if childCount > index:
+				return(True)
+			return(False)
+		obj = self.subClass(windowHandle = self.windowHandle, parent = self, index = index)
+		valid = bool(obj.name or obj.location and any(obj.location))
+		return(valid)
+
 	def _get_name(self):
 		if not self.childCount:
 			return(super(ComplexParent, self).name)
@@ -346,9 +367,10 @@ class ComplexParent(Win32):
 		return(0)
 	isComplex = True
 	def _get_firstChild(self):
-		obj = self.subClass(windowHandle = self.windowHandle, parent = self, index = 0)
-		if not obj.isValid:
+
+		if not self.isValid(0):
 			return(window.Window._get_firstChild(self))
+		obj = self.subClass(windowHandle = self.windowHandle, parent = self, index = 0)
 		return(obj)
 	def _get_lastChild(self):
 		if not self.childCount:
@@ -357,30 +379,21 @@ class ComplexParent(Win32):
 	def _get_focusIndex(self):
 		return(-1)
 	def _get_focusRedirect(self):
-		obj = self.subClass(windowHandle = self.windowHandle, parent = self, index = self.focusIndex)
-		if not obj.isValid:
+		index = self.focusIndex
+		if not self.isValid(index):
 			return
+		obj = self.subClass(windowHandle = self.windowHandle, parent = self, index = index)
 		return(obj)
 	def getIndexFromPoint(self, x, y):
 		return(-1)
 	def objectFromPointRedirect(self, x, y):
 		index = self.getIndexFromPoint(x, y)
+		if not self.isValid(index):
+			return
 		obj = self.subClass(windowHandle = self.windowHandle, index = index, parent = self)
-		if not obj.isValid:
-			return
-		if index < 0:
-			return
 		return(obj)
 class Complex(Win32):
 	shouldLookAtClassName = False
-	def _get_isValid(self):
-		childCount = self.parent.childCount
-		if childCount:
-			if childCount > self.index:
-				return(True)
-			return(False)
-		valid = bool(self.name or self.location and any(self.location))
-		return(valid)
 	def _isEqual(self, other):
 		eq = self.index == other.index and self.windowHandle == other.windowHandle
 		return(eq)
@@ -396,19 +409,11 @@ class Complex(Win32):
 	def _get_presentationType(self):
 		return(self.presType_content)
 	def _get_next(self):
-		childCount = self.parent.childCount
-		index = self.index
-		# In some circumstances, it is dangerous to even create an invalid object, the application can crash.
-		# So don't do it if the window supports its respective child count message, and index+1 is greater or equal to the parent's child count
-		# If the window doesn't support the selected controls child count message, we don't care, as the only way to access that control is to check if the next item has a valid name or location
-		obj = None
-		if childCount and childCount > index+1:
-			obj = self.parent.subClass(windowHandle = self.windowHandle, parent = self.parent, index = index+1)
-		elif not childCount:
-			obj = self.parent.subClass(windowHandle = self.windowHandle, parent = self.parent, index = index+1)
-			if not obj.isValid:
-				return
-		return(obj)
+		index = self.index+1
+		parent = self.parent
+		if not parent.isValid(self.index+1):
+			return
+		return(parent.subClass(windowHandle = self.windowHandle, parent = parent, index = index))
 	def _get_previous(self):
 		index = self.index
 		if index <= 0:
@@ -423,19 +428,22 @@ class TimerMixin(NVDAObject):
 	# Sometimes, accessibillity APIs considers the same onscreen object to not be equal to itself.
 	# This causes the TimerMixin class to continuously fire focus events on the same object over and over.
 	# So we implement more checks here
-	def isEqual(self, other): # Misspelled on purpose. I had issues with it, but don't know how to implement it correctly for now.
-		eq = super(TimerMixin, self)._isEqual(other)
-		if eq:
-			return(eq)
-		props = [
-			self.name == other.name,
-			self.role == other.role,
-			self.positionInfo == other.positionInfo,
-			self.location == other.location
-		]
-		return(all(props))
+	# This implementation is bugged at the moment, and I don't know how to fix it.
+	#def _isEqual(self, other): 
+		#eq = super(TimerMixin, self)._isEqual(other)
+		#if eq:
+			#return(eq)
+		#props = [
+			#self.name == other.name,
+			#self.role == other.role,
+			#self.positionInfo == other.positionInfo,
+			#self.location == other.location
+		#]
+		#return(all(props))
 	def _get_shouldMonitorFocusEvents(self):
 		if config.conf["enhancedControlSupport"]["focusEnhancement"]:
+			return(True)
+		if isinstance(self, DisplayChunk):
 			return(True)
 		if isinstance(self, Win32) and self.isComplex:
 			return(True)
@@ -515,6 +523,7 @@ focusTimer = wx.Timer(gui.mainFrame)
 gui.mainFrame.Bind(wx.EVT_TIMER, handler = focusTimerFunc, source = focusTimer)
 
 class EnhancedUIATextInfo(UIA.UIATextInfo):
+	# To fix issues when NVDA tries to interact with the text field in Windows PowerShell ISE
 	def _getFormatFieldAtRange(self, rangeObj, formatConfig, ignoreMixedValues = False):
 		old = None
 		try:
@@ -526,10 +535,12 @@ class EnhancedUIATextInfo(UIA.UIATextInfo):
 
 class EnhancedUIASupport(UIA.UIA):
 	def event_UIA_elementSelected(self):
-		obj = NVDAObject.objectWithFocus()
+		obj = api.getFocusObject()
 		conf = getConfigFromWindow(obj.windowHandle)
 		if conf and conf[0] == "enhanced UIA" and isinstance(obj, behaviors.EditableTextBase):
-			eventHandler.executeEvent("gainFocus", self)
+			speech.speech.cancelSpeech()
+			api.setNavigatorObject(self)
+			speech.speech.speakObject(self, reason = controlTypes.OutputReason.FOCUS)
 		super(EnhancedUIASupport, self).event_UIA_elementSelected()
 	def _get_states(self):
 		try:
@@ -619,7 +630,9 @@ class DisplayModelEdit(Edit):
 	displayName = _("display text edit")
 	def _get_TextInfo(self):
 		return(displayModel.EditableTextDisplayModelTextInfo)
-
+	@staticmethod
+	def isSupported(windowHandle):
+		return(False)
 #* button support
 #** button messages.
 BM_GETCHECK = 240
@@ -708,7 +721,7 @@ class Tab(ComplexParent):
 		return(user32.SendMessageW(self.windowHandle, TCM_GETCURFOCUS, 0, 0))
 	def getIndexFromPoint(self, x, y):
 		point = POINT(x, y)
-		windll.user32.ScreenToClient(self.windowHandle, addressof(point))
+		user32.ScreenToClient(self.windowHandle, addressof(point))
 		info = TCHHITTESTINFO(point, 0)
 		tabIndex = sendMessageInProcess(self.windowHandle, TCM_HITTEST, 0, addressof(info), addressof(info), sizeof(info), shouldTryWithLocalMemoryAddress = False)
 		return(tabIndex)
@@ -779,8 +792,6 @@ class ListBoxItem(Complex):
 	def _get_win32Name(self):
 		textLength = user32.SendMessageW(self.windowHandle, LB_GETTEXTLEN, self.index, 0)
 		if textLength <= 0:
-			return("")
-		if not textLength:
 			return("")
 		size = textLength*sizeof(c_wchar)+1
 		buffer = create_unicode_buffer(size)
@@ -968,13 +979,13 @@ classNamesToNVDAControlTypeNames = {}
 supportedClasses = [
 	Slider,
 	Edit,
-	DisplayModelEdit,
 	Button,
 	CheckBox,
 	RadioButton,
 	Text,
 	Tab,
 	ListBox,
+	DisplayModelEdit,
 	Unknown
 ]
 configNamesToClasses = {}
@@ -1109,10 +1120,15 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	def chooseNVDAObjectOverlayClasses(self, obj, clsList):
 		if not isinstance(obj, window.Window):
 			return
-		if not issubclass(obj.APIClass, Win32) and obj.APIClass not in (IAccessible.IAccessible, UIA.UIA):
+		conf = getConfigFromWindow(obj.windowHandle)
+		# Check if any of the classes in clsList is a subclass of Complex
+		# If they are, we are in an unknown control, and should not rely on events
+
+		if not issubclass(obj.APIClass, Win32) and obj.APIClass not in (IAccessible.IAccessible, UIA.UIA, JAB.JAB):
+
 			return
 		newCls = None
-		conf = getConfigFromWindow(obj.windowHandle)
+
 		if conf and conf[0] == "normal":
 			return
 		isEditable = False
@@ -1162,10 +1178,9 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			for i in copyList:
 				if issubclass(i, UIA.UIA) and i != UIA.UIA:
 					clsList.remove(i)
-		# Check if any of the classes in clsList is a subclass of Complex
-		# If they are, we are in an unknown control, and should not rely on events
 		if shouldUseTimerMixin(conf, obj, clsList):
 			clsList.insert(0, TimerMixin)
+
 
 	@script(
 		# Translators: Describes the select control type script
@@ -1223,4 +1238,4 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			message = _('Unable to find control type')
 			ui.message(message)
 			return
-		ui.message(cls.baseRole.displayString)
+		ui.message(cls.baseRole.displayString if not cls.displayName else cls.displayName)
