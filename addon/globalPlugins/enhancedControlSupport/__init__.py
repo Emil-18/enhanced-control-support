@@ -81,7 +81,7 @@ config.conf.spec["enhancedControlSupport"] = confSpec
 #* settings dialog
 class EnhancedControlSupportSettingsPanel(gui.SettingsPanel):
 	# Translators: the title of the enhanced control support settings panel
-	title = _("Enhanced control support")
+	title = _("Enhanced Control Support")
 	def onValueChange(self, evt):
 		self.focusEnhancement.Enable(not evt.IsChecked())
 	def makeSettings(self, settingsSizer):
