@@ -87,7 +87,7 @@ class EnhancedControlSupportSettingsPanel(gui.SettingsPanel):
 	def makeSettings(self, settingsSizer):
 		settings = gui.guiHelper.BoxSizerHelper(self, sizer=settingsSizer)
 		# Translators: the label for a checkbox
-		label = ("Rely on events by default")
+		label = _("Rely on events by default")
 		self.trustEvents = settings.addItem(wx.CheckBox(self, label = label))
 		self.trustEvents.SetValue(config.conf["enhancedControlSupport"]["trustEvents"])
 		self.trustEvents.Bind(wx.EVT_CHECKBOX, self.onValueChange)
@@ -1007,7 +1007,7 @@ supportedControls.append(normal)
 classNamesToNVDAControlTypeNames.update({'MSAA': 'MSAA', 'UIA': 'UIA', "enhanced UIA": enhancedUIA, 'normal': normal})
 class ControlDialog(SettingsDialog):
 	# Translators: The title for the control type selection dialog
-	title = _('Select control type')
+	title = _("Select control type")
 	helpId = None
 	def __init__(self, *args, obj, name, role, **kwargs):
 
