@@ -1,7 +1,7 @@
 # Forbedret kontrollstøtte.
 * Forfatter: Emil-18.
 * NVDA -kompatibilitet: 2024.4 og utover.
-* Last ned: [Stabil versjon] (https://github.com/emil-18/enhanced-control-support/releases/download/v1.2/enhancedcontrolsupport-1.2.nvda-addon).
+* Last ned: [Stabil versjon](https://github.com/emil-18/enhanced-control-support/releases/download/v1.2/enhancedcontrolsupport-1.2.nvda-addon).
 
 Dette tillegget lar deg bruke noen kontroller som normalt ikke fungerer med NVDA. Du kan tvinge NVDA til å tolke en kontroll som en annen type, for eksempel kan en rute tolkes som en avkryssingsboks. Dette kan forbedre rapporteringen av denne kontrollen, for eksempel la NVDA rapportere om den er avkrysset eller ikke. I noen tilfeller vil NVDA også gjenkjenne flere kontroller på egen hånd.
 
