@@ -1,7 +1,7 @@
 # Enhanced Control Support.
 * Author: Emil-18.
 * NVDA compatibility: 2024.4 and beyond.
-* Download: [Stable version](https://github.com/Emil-18/enhanced-control-support/releases/download/v1.2/enhancedControlSupport-1.2.nvda-addon).
+* Download: [Stable version](https://github.com/Emil-18/enhanced-control-support/releases/download/v1.2.1/enhancedControlSupport-1.2.1.nvda-addon).
 
 This add-on allows you to use some controls that normally don't work with NVDA. You can force NVDA to interpret a control as another type, for example, a pane can be interpreted as a check box. This may enhance the reporting of that control, for example let NVDA report the checked/unchecked state. In some cases, NVDA will also recognise more controls on its own.
 
@@ -99,6 +99,8 @@ if checked, NVDA will use normal add-on behavior for all controls until NVDA is 
 * Rely on events by default: This is a check box that determines if NVDA should rely on events. If unchecked, NVDA will continuously ask the focused object for its name, states, etc. If the information is different from the last time NVDA asked for it, the new information will be reported. This setting is off by default.
 * Use enhanced methods to detect where the focus is located (experimental): same as above, just for focus instead. This setting is off by default.
 ## Changelog
+### v1.2.1
+* Russian translation has been added, thanks to Kostenkov-2021
 ### v 1.2
 * Added compatibility with NVDA 2025
 * Added support for list boxes, tab controls, and display text edit controls.

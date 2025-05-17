@@ -1,7 +1,7 @@
 # Forbedret kontrollstøtte.
 * Forfatter: Emil-18.
 * NVDA -kompatibilitet: 2024.4 og utover.
-* Last ned: [Stabil versjon](https://github.com/emil-18/enhanced-control-support/releases/download/v1.2/enhancedcontrolsupport-1.2.nvda-addon).
+* Last ned: [Stabil versjon](https://github.com/emil-18/enhanced-control-support/releases/download/v1.2.1/enhancedcontrolsupport-1.2.1.nvda-addon).
 
 Dette tillegget lar deg bruke noen kontroller som normalt ikke fungerer med NVDA. Du kan tvinge NVDA til å tolke en kontroll som en annen type, for eksempel kan en rute tolkes som en avkryssingsboks. Dette kan forbedre rapporteringen av denne kontrollen, for eksempel la NVDA rapportere om den er avkrysset eller ikke. I noen tilfeller vil NVDA også gjenkjenne flere kontroller på egen hånd.
 
@@ -99,6 +99,8 @@ hvis krysset av, vil NVDA bruke normal tilleggsoppførsel for alle kontroller ti
 * Stol på hendelser som standard: Dette er en avkrysningsboks som avgjør om NVDA skal stole på hendelser. Hvis ikke -krysset av, vil NVDA kontinuerlig spørre det fokuserte objektet for dets navn, tilstander osv. Hvis informasjonen er forskjellig fra forrige gang NVDA spurte om det, vil den nye informasjonen bli rapportert.
 * Bruk forbedrede metoder for å oppdage hvor fokuset er plasert(eksperimentell): samme som ovenfor, bare for fokus i stedet. Denne innstillingen er som standard av.
 ## Forandringslogg
+### v1.2.1
+* Russisk oversettelse har blitt lagt til, takket vere Kostenkov-2021
 ### v 1.2
 * Lagt til kompatibilitet med NVDA 2025
 * Lagt til støtte for listebokser, fanekontroller og skjerm redigerings kontroller.
