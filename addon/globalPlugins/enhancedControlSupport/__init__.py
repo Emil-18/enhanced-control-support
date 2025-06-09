@@ -71,7 +71,7 @@ kernel32.VirtualAllocEx.restype = c_void_p
 kernel32.VirtualAllocEx.argtypes = [HANDLE, c_void_p, c_void_p, DWORD, DWORD]
 kernel32.WriteProcessMemory.argtypes = [HANDLE, c_void_p, c_void_p, c_longlong, c_void_p]
 kernel32.ReadProcessMemory.argtypes = [HANDLE, c_void_p, c_void_p, c_longlong, c_void_p]
-
+user32.SendMessageW.argtypes = [HWND, UINT, WPARAM, LPARAM]
 #* config
 confSpec = {
 	"trustEvents":"boolean(default=False)",
@@ -233,6 +233,8 @@ def newIsUIAWindow(self, windowHandle, *args, **kwargs):
 	return(True)
 
 #* Additions
+#** General messages
+WM_USER = 1024
 #** General structures
 class SHORTPOINT(Structure):
 	_fields_ = [
@@ -350,7 +352,7 @@ class ComplexParent(Win32):
 	def isValid(self, index):
 		childCount = self.childCount
 		if childCount:
-			if childCount > index:
+			if childCount > index and index >=0:
 				return(True)
 			return(False)
 		obj = self.subClass(windowHandle = self.windowHandle, parent = self, index = index)
@@ -815,7 +817,80 @@ class ListBoxItem(Complex):
 		super(ListBoxItem, self).setFocus()
 		user32.SendMessageW(self.windowHandle, LB_SETCARETINDEX, self.index, 0)
 	
-
+#* tool bar support
+#** tool bar messages
+TB_BUTTONCOUNT = WM_USER+24
+TB_CHECKBUTTON = WM_USER+2
+TB_GETBUTTON = WM_USER+23
+TB_GETBUTTONTEXTA = WM_USER+45
+TB_GETBUTTONTEXTW = WM_USER+75
+TB_GETINSERTMARK = WM_USER + 79
+TB_GETITEMRECT = WM_USER + 29
+TB_HITTEST = WM_USER + 69
+TB_ISBUTTONCHECKED = WM_USER + 10
+TB_ISBUTTONENABLED = WM_USER + 9
+TB_ISBUTTONHIDDEN = WM_USER + 12
+TB_PRESSBUTTON = WM_USER + 3
+TB_SETINSERTMARK = WM_USER + 80
+TB_GETTOOLTIPS = WM_USER+35
+TB_GETSTRINGW = WM_USER+91
+#** toolbar structures
+class TBBUTTON(Structure):
+	_fields_ = [
+		("bitmap", c_int),
+		("commandIdentifier", c_int),
+		("fsState", c_byte),
+		("fsStyle", c_byte),
+		("reserved", c_short),
+		("applicationDefined", c_void_p),
+		("string", c_void_p)
+			]
+class Toolbar(ComplexParent):
+	baseRole = controlTypes.Role.TOOLBAR
+	def _get_childCount(self):
+		return(user32.SendMessageW(self.windowHandle, TB_BUTTONCOUNT, 0, 0))
+	@staticmethod
+	def isSupported(windowHandle):
+		res = user32.SendMessageW(windowHandle, TB_BUTTONCOUNT, 0, 0)
+		return(bool(res))
+	def getIndexFromPoint(self, x, y):
+		point = POINT(x, y)
+		user32.ScreenToClient(self.windowHandle, addressof(point))
+		res = sendMessageInProcess(self.windowHandle, TB_HITTEST, 0, addressof(point), addressof(point), sizeof(point), shouldTryWithLocalMemoryAddress = False)
+		return(res)
+	def _get_focusIndex(self):
+		return(user32.SendMessageW(self.windowHandle, TB_GETINSERTMARK, 0, 0))
+	def _get_subClass(self):
+		return(ToolbarButton)
+class ToolbarButton(Complex):
+	baseRole = controlTypes.Role.BUTTON
+	def _get__commandIdentifier(self):
+		tbButton = TBBUTTON()
+		sendMessageInProcess(self.windowHandle, TB_GETBUTTON, self.index, addressof(tbButton), addressof(tbButton), sizeof(tbButton))
+		return(tbButton.commandIdentifier)
+	def _get_location(self):
+		rect = RECT()
+		sendMessageInProcess(self.windowHandle, TB_GETITEMRECT, self.index, addressof(rect), addressof(rect), sizeof(rect))
+		if not (rect.left or rect.right or rect.top or rect.bottom):
+			return
+		rect = clientRectToScreenRect(self.windowHandle, rect)
+		location = locationHelper.RectLTWH.fromCompatibleType(rect)
+		return(location)
+	def _get_win32Name(self):
+		commandIdentifier = self._commandIdentifier
+		length = 255
+		buffer = create_unicode_buffer(length)
+		size = length * sizeof(c_wchar)+1
+		sendMessageInProcess(self.windowHandle, TB_GETBUTTONTEXTW, commandIdentifier, buffer, buffer, size)
+		name = buffer.value
+		if name:
+			return(name)
+		shortPoint = SHORTPOINT(length, self.index)
+		wParam = WPARAM.from_address(addressof(shortPoint))
+		sendMessageInProcess(self.windowHandle, TB_GETSTRINGW, wParam, buffer, buffer, sizeof(buffer))
+		name = buffer.value
+		return(name if name else "")
+		
 #* support for unknown controls
 class DisplayChunk(Win32):
 	def _get_presentationType(self):
@@ -985,6 +1060,7 @@ supportedClasses = [
 	Text,
 	Tab,
 	ListBox,
+	Toolbar,
 	DisplayModelEdit,
 	Unknown
 ]
