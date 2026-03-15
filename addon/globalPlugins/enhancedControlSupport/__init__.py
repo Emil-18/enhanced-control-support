@@ -47,7 +47,7 @@ def saveConfig():
 	f.close()
 
 #* global variables
-path = config.getInstalledUserConfigPath()
+path = config.getUserDefaultConfigPath()
 configPath = os.path.join(path, 'controlConfig.ini')
 disabled = False
 oldFocus = None
@@ -66,12 +66,21 @@ roles = (
 user32 = WinDLL("user32")
 kernel32 = WinDLL("kernel32")
 oleacc = WinDLL("oleacc")
+msvcrt = CDLL("msvcrt")
 #* dll function types
 kernel32.VirtualAllocEx.restype = c_void_p
 kernel32.VirtualAllocEx.argtypes = [HANDLE, c_void_p, c_void_p, DWORD, DWORD]
 kernel32.WriteProcessMemory.argtypes = [HANDLE, c_void_p, c_void_p, c_longlong, c_void_p]
 kernel32.ReadProcessMemory.argtypes = [HANDLE, c_void_p, c_void_p, c_longlong, c_void_p]
+kernel32.VirtualFreeEx.argtypes = [ctypes.wintypes.HANDLE, c_void_p, c_uint, ctypes.wintypes.DWORD]
 user32.SendMessageW.argtypes = [HWND, UINT, WPARAM, LPARAM]
+msvcrt.malloc.argtypes = [c_void_p]
+msvcrt.malloc.restype = c_void_p
+msvcrt.free.argtypes = [c_void_p]
+msvcrt.memcpy.argtypes = [c_void_p, c_void_p, c_uint]
+msvcrt.memcpy.restype = c_void_p
+msvcrt.memcmp.argtypes = [c_void_p, c_void_p, c_uint]
+msvcrt.memcmp.restype = c_void_p
 #* config
 confSpec = {
 	"trustEvents":"boolean(default=False)",
@@ -155,13 +164,13 @@ def sendMessageInProcess(hwnd, msg, wParam, lParam, localBuffer, size, shouldTry
 		res = cancellableSendMessage(hwnd, msg, wParam if wParam != localBuffer else internalBuff, lParam if lParam != localBuffer else internalBuff)
 		# Sometimes, SendMessage fails when it is given an address from none local memory.
 		try:
-			localBuffer2 = cdll.msvcrt.malloc(size)
+			localBuffer2 = msvcrt.malloc(size)
 			kernel32.ReadProcessMemory(processHandle, internalPointerToCheck, localBuffer2, size, 0)
-			if shouldTryWithLocalMemoryAddress and not cdll.msvcrt.memcmp(pointerToCheck, localBuffer2, size):
+			if shouldTryWithLocalMemoryAddress and not msvcrt.memcmp(pointerToCheck, localBuffer2, size):
 				failed = True
 				res = cancellableSendMessage(hwnd, msg,wParam, lParam)
 		finally:
-			cdll.msvcrt.free(localBuffer2)
+			msvcrt.free(localBuffer2)
 
 		# Turn res into a signed value
 		res = c_long(res).value
@@ -236,6 +245,7 @@ def newIsUIAWindow(self, windowHandle, *args, **kwargs):
 #** General messages
 WM_USER = 1024
 #** General structures
+# SHORTPOINT allows us to get and send clean, sencible information from/to functions that expect an intiger that contains its information in its lowword and highword
 class SHORTPOINT(Structure):
 	_fields_ = [
 		("x", c_short),
@@ -835,15 +845,25 @@ TB_SETINSERTMARK = WM_USER + 80
 TB_GETTOOLTIPS = WM_USER+35
 TB_GETSTRINGW = WM_USER+91
 #** toolbar structures
-class TBBUTTON(Structure):
+class TBBUTTON32(Structure):
 	_fields_ = [
 		("bitmap", c_int),
 		("commandIdentifier", c_int),
 		("fsState", c_byte),
 		("fsStyle", c_byte),
 		("reserved", c_short),
-		("applicationDefined", c_void_p),
-		("string", c_void_p)
+		("applicationDefined", c_uint),
+		("string", c_uint)
+			]
+class TBBUTTON64(Structure):
+	_fields_ = [
+		("bitmap", c_int),
+		("commandIdentifier", c_int),
+		("fsState", c_byte),
+		("fsStyle", c_byte),
+		("reserved", c_short),
+		("applicationDefined", c_uint64),
+		("string", c_uint64)
 			]
 class Toolbar(ComplexParent):
 	baseRole = controlTypes.Role.TOOLBAR
@@ -865,7 +885,7 @@ class Toolbar(ComplexParent):
 class ToolbarButton(Complex):
 	baseRole = controlTypes.Role.BUTTON
 	def _get__commandIdentifier(self):
-		tbButton = TBBUTTON()
+		tbButton = TBBUTTON32()
 		sendMessageInProcess(self.windowHandle, TB_GETBUTTON, self.index, addressof(tbButton), addressof(tbButton), sizeof(tbButton))
 		return(tbButton.commandIdentifier)
 	def _get_location(self):
@@ -876,6 +896,7 @@ class ToolbarButton(Complex):
 		rect = clientRectToScreenRect(self.windowHandle, rect)
 		location = locationHelper.RectLTWH.fromCompatibleType(rect)
 		return(location)
+	# Name is not retreaved for the toolbar buttons I tested. I have no idea how to fix it.
 	def _get_win32Name(self):
 		commandIdentifier = self._commandIdentifier
 		length = 255
@@ -885,12 +906,20 @@ class ToolbarButton(Complex):
 		name = buffer.value
 		if name:
 			return(name)
-		shortPoint = SHORTPOINT(length, self.index)
-		wParam = WPARAM.from_address(addressof(shortPoint))
-		sendMessageInProcess(self.windowHandle, TB_GETSTRINGW, wParam, buffer, buffer, sizeof(buffer))
-		name = buffer.value
-		return(name if name else "")
-		
+		TBBUTTON = TBBUTTON64 if self.appModule.is64BitProcess else TBBUTTON32
+		maxTextLen = 255*sizeof(c_wchar)
+		buffer = create_unicode_buffer(255)
+		internalBuffer = kernel32.VirtualAllocEx(self.processHandle, 0, maxTextLen, winKernel.MEM_COMMIT, winKernel.PAGE_READWRITE)
+		tbButton = TBBUTTON(0, 0, 0, 0, 0, 0, internalBuffer)
+		sendMessageInProcess(self.windowHandle, TB_GETBUTTON, self.index, addressof(tbButton), addressof(tbButton), sizeof(tbButton))
+		kernel32.ReadProcessMemory(self.processHandle, internalBuffer, buffer, 255*sizeof(c_wchar), 0)
+		kernel32.VirtualFreeEx(self.processHandle, internalBuffer, 0, winKernel.MEM_RELEASE)
+		name = buffer.value or ""
+		return(name)
+	def setFocus(self):
+
+		super(ToolbarButton, self).setFocus()
+		user32.SendMessageW(self.windowHandle, TB_SETINSERTMARK, self.index, 0)
 #* support for unknown controls
 class DisplayChunk(Win32):
 	def _get_presentationType(self):
@@ -1219,6 +1248,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 					if i == obj.APIClass or i in obj.APIClass.mro():
 						continue
 					clsList.remove(i)
+#				clsList.remove(obj.APIClass)
 				clsList.insert(0, Win32)
 				clsList.insert(0, newCls)
 				# Since all classes from global plugins that was in clsList are now removed,
@@ -1285,7 +1315,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			role = obj.role
 		except:
 			role = controlTypes.Role.UNKNOWN
-		gui.mainFrame._popupSettingsDialog(ControlDialog, obj = obj, name = name, role = role)
+		gui.mainFrame.popupSettingsDialog(ControlDialog, obj = obj, name = name, role = role)
 	@script(
 		# Translators: describes the select control from navigator script:
 		description = _('Lets you choose from a list of controls how NVDA will treat the control where the navigator object is located. For example, choos \'button\' To tell NVDA to treat it as a button.'),
