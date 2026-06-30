@@ -29,6 +29,7 @@ import threading
 import tones
 import ui
 import UIAHandler
+from _ctypes import COMError
 from watchdog import cancellableSendMessage
 import winUser
 import winKernel
@@ -36,7 +37,7 @@ import wx
 from ctypes import *
 from ctypes.wintypes import *
 from globalVars import appPid
-from gui.settingsDialogs import SettingsDialog
+from gui.settingsDialogs import SettingsDialog, SettingsPanel
 from NVDAObjects import *
 from scriptHandler import script, getLastScriptRepeatCount
 from time import sleep
@@ -88,7 +89,7 @@ confSpec = {
 }
 config.conf.spec["enhancedControlSupport"] = confSpec
 #* settings dialog
-class EnhancedControlSupportSettingsPanel(gui.SettingsPanel):
+class EnhancedControlSupportSettingsPanel(SettingsPanel):
 	# Translators: the title of the enhanced control support settings panel
 	title = _("Enhanced Control Support")
 	def onValueChange(self, evt):
@@ -187,6 +188,14 @@ def sendMessageInProcess(hwnd, msg, wParam, lParam, localBuffer, size, shouldTry
 
 cachedAppNames = {}
 notWin32 = ('MSAA', 'UIA', "enhanced UIA", 'normal')
+propertyUnavailable = object()
+
+def getObjectPropertySafely(obj, propertyName):
+	try:
+		return getattr(obj, propertyName)
+	except (COMError, RuntimeError, AttributeError):
+		return(propertyUnavailable)
+
 def getKeyFromWindow(windowHandle, bypassDisabled = False):
 	if disabled and not bypassDisabled:
 		return
@@ -467,9 +476,15 @@ class TimerMixin(NVDAObject):
 	staticStates = set()
 	
 	def initOverlayClass(self):
-		self.staticName = self.name
-		self.staticValue = self.value
-		self.staticStates = self.states
+		name = getObjectPropertySafely(self, "name")
+		if name is not propertyUnavailable:
+			self.staticName = name
+		value = getObjectPropertySafely(self, "value")
+		if value is not propertyUnavailable:
+			self.staticValue = value
+		states = getObjectPropertySafely(self, "states")
+		if states is not propertyUnavailable:
+			self.staticStates = states
 		try:
 			self.staticCaret = self.makeTextInfo(textInfos.POSITION_CARET)
 		except:
@@ -491,14 +506,20 @@ class TimerMixin(NVDAObject):
 		self.staticCaret = caret
 		super(TimerMixin, self).event_caret()
 	def event_nameChange(self):
-		self.staticName = self.name
+		name = getObjectPropertySafely(self, "name")
+		if name is not propertyUnavailable:
+			self.staticName = name
 		super(TimerMixin, self).event_nameChange()
 	def event_valueChange(self):
-		self.staticValue = self.value
+		value = getObjectPropertySafely(self, "value")
+		if value is not propertyUnavailable:
+			self.staticValue = value
 		super(TimerMixin, self).event_valueChange()
 
 	def event_stateChange(self):
-		self.staticStates = self.states
+		states = getObjectPropertySafely(self, "states")
+		if states is not propertyUnavailable:
+			self.staticStates = states
 		super(TimerMixin, self).event_stateChange()
 
 
@@ -507,11 +528,14 @@ class TimerMixin(NVDAObject):
 def timerFunc(self):
 	focus = api.getFocusObject()
 	if not isinstance(focus, TimerMixin): return
-	if focus.staticName != focus.name:
+	name = getObjectPropertySafely(focus, "name")
+	if name is not propertyUnavailable and focus.staticName != name:
 		eventHandler.queueEvent('nameChange', focus)
-	if focus.staticValue != focus.value: 
+	value = getObjectPropertySafely(focus, "value")
+	if value is not propertyUnavailable and focus.staticValue != value: 
 		eventHandler.queueEvent('valueChange', focus)
-	if focus.staticStates != focus.states:
+	states = getObjectPropertySafely(focus, "states")
+	if states is not propertyUnavailable and focus.staticStates != states:
 		eventHandler.queueEvent('stateChange', focus)
 	if focus.shouldMonitorCaretEvents:
 		try:
