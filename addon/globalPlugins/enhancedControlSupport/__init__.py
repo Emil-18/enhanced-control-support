@@ -37,6 +37,7 @@ from ctypes import *
 from ctypes.wintypes import *
 from globalVars import appPid
 from gui.settingsDialogs import SettingsDialog
+from logHandler import log
 from NVDAObjects import *
 from scriptHandler import script, getLastScriptRepeatCount
 from time import sleep
@@ -74,6 +75,8 @@ kernel32.WriteProcessMemory.argtypes = [HANDLE, c_void_p, c_void_p, c_longlong, 
 kernel32.ReadProcessMemory.argtypes = [HANDLE, c_void_p, c_void_p, c_longlong, c_void_p]
 kernel32.VirtualFreeEx.argtypes = [ctypes.wintypes.HANDLE, c_void_p, c_uint, ctypes.wintypes.DWORD]
 user32.SendMessageW.argtypes = [HWND, UINT, WPARAM, LPARAM]
+user32.ScreenToClient.argtypes = [HWND, c_void_p]
+user32.ClientToScreen.argtypes = [HWND, c_void_p]
 msvcrt.malloc.argtypes = [c_void_p]
 msvcrt.malloc.restype = c_void_p
 msvcrt.free.argtypes = [c_void_p]
@@ -251,6 +254,96 @@ class SHORTPOINT(Structure):
 		("x", c_short),
 		("y", c_short)
 		]
+
+#* General classes
+
+# We nead to make sure properties from the accessibillity APIs don't interfer with Win32 controls when the user has explisitly decided to overwrite a control
+# If we don't do this, the user could get an inconsistant experience, e.g, if they overwrite a working tab control that reports wrong position information, and then moves the focus to it
+# tab control 1 of 8, tab 1 of 4
+# We can't simply remove the API class from the objects class structure, as it causes focus events to fail, and what if other code expect properties only defined on the API class to be there?
+# as all builtin API classes inheret from Window and NVDAObject, the API class has to be placed after them
+# so copy the content of both Window and NVDAObject into new classes
+WindowGuard = type("WindowGuard", (NVDAObject,), {})
+NVDAObjectGuard = type("NVDAObjectGuard", (NVDAObject,), {})
+for key, value in window.Window.__dict__.items():
+	setattr(WindowGuard, key, value)
+for key, value in NVDAObject.__dict__.items():
+	setattr(NVDAObjectGuard, key, value)
+
+class EqFixer(WindowGuard):
+	# We redefine __eq__, as the normal one returns False if self and other is different types.
+	# As we act as if every object inside a window is the same object, while in reality they may be different, other add-ons may have appended different sub classes based on the actual underlying object
+	def __eq__(self, other):
+		if not isinstance(other, EqFixer):
+			return(False)
+		eq = False
+		try:
+			eq = self._isEqual(other)
+		except:
+			pass
+		return(eq)
+	def __hash__(self):
+		return(super(EqFixer, self).__hash__())
+	def __ne__(self, other):
+		return not self.__eq__(other)
+
+
+
+
+class ErrorHandler(NVDAObject):
+	def _getPropertyAndHandleError(self, propertyName, onError):
+		try:
+			parentObj = super(ErrorHandler, self)
+			property = getattr(parentObj, propertyName)
+			if property is None:
+				property = onError
+		except Exception as Ex:
+			property = onError
+			log.debug(Ex)
+		return(property)
+	def _get_name(self):
+		return(self._getPropertyAndHandleError("name", ""))
+	def _get_value(self):
+		return(self._getPropertyAndHandleError("value", ""))
+	def _get_states(self):
+		return(self._getPropertyAndHandleError("states", set()))
+	def _get_description(self):
+		return(self._getPropertyAndHandleError("description", ""))
+	def _get_role(self):
+		return(self._getPropertyAndHandleError("role", controlTypes.Role.UNKNOWN))
+	def _get_next(self):
+		return(self._getPropertyAndHandleError("next", None))
+	def _get_previous(self):
+		return(self._getPropertyAndHandleError("previous", None))
+	def _get_firstChild(self):
+		return(self._getPropertyAndHandleError("firstChild", None))
+	def _get_lastChild(self):
+		return(self._getPropertyAndHandleError("lastChild", None))
+	def _get_parent(self):
+		return(self._getPropertyAndHandleError("parent", None))
+	def _get_children(self):
+		return(self._getPropertyAndHandleError("children", []))
+	def _get_positionInfo(self):
+		return(self._getPropertyAndHandleError("positionInfo", {}))
+
+class ErrorRedirect(NVDAObject):
+	processID = 0
+	def __init__(self):
+		pass
+
+
+class ErrorHandler2():
+	_redirectObject = ErrorRedirect()
+	def __getattribute__(self, attribute):
+		try:
+			attribute = super(ErrorHandler2, self).__getattribute__(attribute)
+		except AttributeError as a:
+			raise a
+		except Exception as Ex:
+			log.debug(Ex)
+			attribute = getattr(self._redirectObject, attribute)
+		return(attribute)
+			
 class Win32(window.Window):
 	'''
 	Support for win32 controls that don't support IAccessible
@@ -261,6 +354,9 @@ class Win32(window.Window):
 	baseRole = controlTypes.Role.WINDOW
 	subClass = None
 	clicks = 1 # the number of clicks that normaly are required to activate a control
+	# If we don't explisitly allow IAccessible and UIA focus events, they won't fire.
+	shouldAllowIAccessibleFocusEvent = True
+	shouldAllowUIAFocusEvent = True
 	def _get_role(self):
 		return(self.baseRole)
 	def _get_win32Name(self):
@@ -279,8 +375,6 @@ class Win32(window.Window):
 			mouseHandler.doPrimaryClick()
 		winUser.setCursorPos(*mousePos)
 		return(True)
-	def _get_children(self):
-		return(NVDAObject._get_children(self))
 	def doAction(self, index = None):
 		if not self.click():
 			self.doWindowAction()
@@ -294,7 +388,7 @@ class Win32(window.Window):
 		return(name)
 
 	def _get_states(self):
-		states = window.Window._get_states(self)
+		states = super(Win32, self).states
 		# We assume that most win32 controls are focusable
 		states.add(controlTypes.State.FOCUSABLE)
 		focus = api.getFocusObject()
@@ -315,46 +409,7 @@ class Win32(window.Window):
 		if letter:
 			return(shortcut+letter)
 		return('')
-	# Get rid of all the properties from the Accessibillity API that we don't need or use, so we only rely on the information fetched directly from the window.
-	def _get_description(self):
-		return("")
-	def _get_location(self):
-		return(window.Window._get_location(self))
-	def _isEqual(self, other):
-		return(window.Window)._isEqual(self, other)
-	def _get_positionInfo(self):
-		return(dict())
-	def _get_next(self):
-		if not getConfigFromWindow(self.windowHandle): # We do this so a user can navigate to things such as scrollbars, in a window that has been automaticly detected as another type
-			return(super(Win32, self).next)
-		return
-	def _get_previous(self):
-		if not getConfigFromWindow(self.windowHandle): # We do this so a user can navigate to things such as scrollbars, in a window that has been automaticly detected as another type
-			return(super(Win32, self).previous)
-		return
 
-	def _get_firstChild(self):
-		return(window.Window._get_firstChild(self))
-	def _get_lastChild(self):
-		return(window.Window._get_lastChild(self))
-	def _get_parent(self):
-		parent = window.Window(windowHandle = self.windowHandle)
-		if parent == self:
-			parent = window.Window._get_parent(self)
-		return(parent)
-	def _get_treeInterceptor(self):
-		return
-	def _get_value(self):
-		return("")
-	def _get_TextInfo(self):
-		return(NVDAObjectTextInfo)
-	# If we treat an object with a caret as an object type with no caret, it may cause errors.
-	def event_caret(self):
-		if self.TextInfo == NVDAObjectTextInfo:
-			return
-		super(Win32, self).event_caret()
-	def _get_child(self, child):
-		return(self.children[child])
 	def setFocus(self):
 		user32.SetForegroundWindow(self.windowHandle)
 class ComplexParent(Win32):
@@ -1233,8 +1288,6 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			return
 		newCls = None
 
-		if IAccessible.WindowRoot in clsList:
-			return
 		isEditable = False
 
 		if conf or IAccessible.ContentGenericClient in clsList:
@@ -1243,12 +1296,23 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 				newCls = configNamesToClasses[conf[0]]
 			elif IAccessible.ContentGenericClient in clsList and not conf:
 				newCls = findSupportedClass(obj.windowHandle)
+				if newCls == Unknown and not obj.displayText:
+					# Nothing we can do
+					return
+					
 			if newCls:
 				for i in clsList.copy():
 					if i == obj.APIClass or i in obj.APIClass.mro():
 						continue
 					clsList.remove(i)
 #				clsList.remove(obj.APIClass)
+				if conf:
+					# Only insert the guard classes if the user explisitly has overwritten support for a control.
+					# If they are in a content generic client, inserting them will make inconsistant behavior, as they will only be inserted in the ContentGenericClient itself, and not potential WindowRoot and scrollbar objects
+					# This will also insure that object navigation always works as normal when a control isn't altered by the user
+					clsList.insert(0, NVDAObjectGuard)
+					clsList.insert(0, WindowGuard)
+					clsList.insert(0, EqFixer)
 				clsList.insert(0, Win32)
 				clsList.insert(0, newCls)
 				# Since all classes from global plugins that was in clsList are now removed,
@@ -1286,6 +1350,8 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 					clsList.remove(i)
 		if shouldUseTimerMixin(conf, obj, clsList):
 			clsList.insert(0, TimerMixin)
+		if not (conf and conf[0] == "normal"):
+			clsList.insert(0, ErrorHandler2)
 
 
 	@script(
