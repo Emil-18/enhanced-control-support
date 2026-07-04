@@ -343,7 +343,10 @@ class ErrorHandler2():
 			raise a
 		except Exception as Ex:
 			log.debug(Ex)
-			attribute = getattr(self._redirectObject, attribute)
+			# The redirect object is a bare NVDAObject, so it lacks subclass-specific
+			# attributes such as UIAValue; returning None instead of raising keeps the
+			# original error (e.g. a COMError) from crashing the whole event chain.
+			attribute = getattr(self._redirectObject, attribute, None)
 		return(attribute)
 			
 class Win32(window.Window):
