@@ -350,13 +350,20 @@ class ErrorHandler2():
 			):
 				raise Ex
 			log.debug(Ex)
-			attribute = getattr(self._redirectObject, attribute, None)
+			try:
+				attribute = getattr(self._redirectObject, attribute)
+			except AttributeError:
+				raise Ex
 		except Exception as Ex:
 			log.debug(Ex)
-			# The redirect object is a bare NVDAObject, so it lacks subclass-specific
-			# attributes such as UIAValue; returning None instead of raising keeps the
-			# original error (e.g. a COMError) from crashing the whole event chain.
-			attribute = getattr(self._redirectObject, attribute, None)
+			try:
+				attribute = getattr(self._redirectObject, attribute)
+			except AttributeError:
+				# The redirect object is a bare NVDAObject, so it lacks subclass
+				# specific attributes such as UIAValue. Raise the original error
+				# rather than a redirect lookup failure, so calling code can handle
+				# the exception the property was expected to raise.
+				raise Ex
 		return(attribute)
 			
 class Win32(window.Window):
@@ -1425,4 +1432,4 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			message = _('Unable to find control type')
 			ui.message(message)
 			return
-		ui.message(cls.baseRole.displayString if not cls.displayName else cls.displayName)
+		ui.message(cls.baseRole.displayString if not cls.displayName else cls.displayName)
