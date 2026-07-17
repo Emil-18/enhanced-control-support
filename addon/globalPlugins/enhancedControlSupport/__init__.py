@@ -630,12 +630,6 @@ class EnhancedUIASupport(UIA.UIA):
 			api.setNavigatorObject(self)
 			speech.speech.speakObject(self, reason = controlTypes.OutputReason.FOCUS)
 		super(EnhancedUIASupport, self).event_UIA_elementSelected()
-	def _get_states(self):
-		try:
-			states = super(EnhancedUIASupport, self).states
-		except:
-			states = set()
-		return(states)
 	def _get_TextInfo(self):
 		TextInfo = super(EnhancedUIASupport, self).TextInfo
 		if issubclass(TextInfo, UIA.UIATextInfo):
