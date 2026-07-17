@@ -87,7 +87,8 @@ msvcrt.memcmp.restype = c_void_p
 #* config
 confSpec = {
 	"trustEvents":"boolean(default=False)",
-	"focusEnhancement": "boolean(default=False)"
+	"focusEnhancement": "boolean(default=False)",
+	"handleErrors": "boolean(default=True)"
 }
 config.conf.spec["enhancedControlSupport"] = confSpec
 #* settings dialog
@@ -108,9 +109,14 @@ class EnhancedControlSupportSettingsPanel(gui.SettingsPanel):
 		self.focusEnhancement = settings.addItem(wx.CheckBox(self, label = label))
 		self.focusEnhancement.SetValue(config.conf["enhancedControlSupport"]["focusEnhancement"])
 		self.focusEnhancement.Enable(not self.trustEvents.GetValue())
+		# Translators: a label for a check box
+		label = _("Suppress many errors that can occur while tabbing around and preforming object navigation. Disable if you are trying to reproduce an error you can't otherwise reproduce")
+		self.handleErrors = wx.CheckBox(self, label = label)
+		self.handleErrors.SetValue(config.conf["enhancedControlSupport"]["handleErrors"])
 	def onSave(self):
 		config.conf["enhancedControlSupport"]["trustEvents"] = self.trustEvents.GetValue()
 		config.conf["enhancedControlSupport"]["focusEnhancement"] = self.focusEnhancement.GetValue()
+		config.conf["enhancedControlSupport"]["handleErrors"] = self.handleErrors.GetValue()
 #* helper functions
 def shouldUseTimerMixin(conf, obj, clsList):
 
@@ -865,7 +871,7 @@ class ListView(ComplexParent):
 	def isSupported(windowHandle):
 		return(bool(user32.SendMessageW(self.windowHandle, LVM_GETITEMCOUNT, 0, 0)))
 class ListViewItem(Complex):
-	pass
+	baseRole = controlTypes.Role.LISTITEM
 
 #* Tab control support
 #** tab control messages
@@ -1488,7 +1494,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 					clsList.remove(i)
 		if shouldUseTimerMixin(conf, obj, clsList):
 			clsList.insert(0, TimerMixin)
-		if not (conf and conf[0] == "normal"):
+		if config.conf["enhancedControlSupport"]["handleErrors"] and not (conf and conf[0] == "normal"):
 			clsList.insert(0, ErrorHandler2)
 			pass
 
