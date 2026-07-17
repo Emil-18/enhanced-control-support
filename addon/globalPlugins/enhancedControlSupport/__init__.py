@@ -339,8 +339,21 @@ class ErrorHandler2():
 	def __getattribute__(self, attribute):
 		try:
 			attribute = super(ErrorHandler2, self).__getattribute__(attribute)
-		except AttributeError as a:
-			raise a
+		except AttributeError as Ex:
+			# A declared NVDA property can raise AttributeError from inside its
+			# getter (for example, UIA web roleText when ARIA properties are None).
+			# Preserve normal missing-attribute semantics, but handle failures from
+			# known properties the same way as other property errors.
+			if not any(
+				attribute in cls.__dict__ or f"_get_{attribute}" in cls.__dict__
+				for cls in type(self).__mro__
+			):
+				raise Ex
+			log.debug(Ex)
+			try:
+				attribute = getattr(self._redirectObject, attribute)
+			except AttributeError:
+				raise Ex
 		except Exception as Ex:
 			log.debug(Ex)
 			try:
