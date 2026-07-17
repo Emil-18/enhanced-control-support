@@ -124,6 +124,8 @@ def shouldUseTimerMixin(conf, obj, clsList):
 	return(False)
 def objectWithFocus():
 	realFocus = NVDAObject.objectWithFocus()
+	if not realFocus:
+		return
 	if realFocus.role in [
 		controlTypes.Role.MENUBAR,
 		controlTypes.Role.MENU,
