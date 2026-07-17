@@ -124,8 +124,6 @@ def shouldUseTimerMixin(conf, obj, clsList):
 	return(False)
 def objectWithFocus():
 	realFocus = NVDAObject.objectWithFocus()
-	if realFocus is None:
-		return(realFocus)
 	if realFocus.role in [
 		controlTypes.Role.MENUBAR,
 		controlTypes.Role.MENU,
@@ -358,11 +356,7 @@ class ErrorHandler2():
 			log.debug(Ex)
 			try:
 				attribute = getattr(self._redirectObject, attribute)
-			except AttributeError:
-				# The redirect object is a bare NVDAObject, so it lacks subclass
-				# specific attributes such as UIAValue. Raise the original error
-				# rather than a redirect lookup failure, so calling code can handle
-				# the exception the property was expected to raise.
+			except:
 				raise Ex
 		return(attribute)
 			
@@ -445,7 +439,6 @@ class ComplexParent(Win32):
 		obj = self.subClass(windowHandle = self.windowHandle, parent = self, index = index)
 		valid = bool(obj.name or obj.location and any(obj.location))
 		return(valid)
-
 	def _get_name(self):
 		if not self.childCount:
 			return(super(ComplexParent, self).name)
@@ -462,7 +455,13 @@ class ComplexParent(Win32):
 		obj = self.subClass(windowHandle = self.windowHandle, parent = self, index = 0)
 		return(obj)
 	def _get_lastChild(self):
-		if not self.childCount:
+		index = self.childCount
+		if not index:
+			while self.isValid(index):
+				index += 1
+			if index:
+				index -= 1
+		if not index:
 			return(window.Window._get_lastChild(self))
 		return(self.subClass(windowHandle = self.windowHandle, parent = self, index = self.childCount-1))
 	def _get_focusIndex(self):
@@ -540,15 +539,7 @@ class TimerMixin(NVDAObject):
 	shouldMonitorCaretEvents = False
 	staticName = staticValue = ""
 	staticStates = set()
-	
-	def initOverlayClass(self):
-		self.staticName = self.name
-		self.staticValue = self.value
-		self.staticStates = self.states
-		try:
-			self.staticCaret = self.makeTextInfo(textInfos.POSITION_CARET)
-		except:
-			pass
+	staticCaret = None
 	def event_gainFocus(self):
 		timer.Start(50)
 		if self.shouldMonitorFocusEvents:
@@ -588,7 +579,7 @@ def timerFunc(self):
 		eventHandler.queueEvent('valueChange', focus)
 	if focus.staticStates != focus.states:
 		eventHandler.queueEvent('stateChange', focus)
-	if focus.shouldMonitorCaretEvents:
+	if focus.shouldMonitorCaretEvents and focus.staticCaret:
 		try:
 			caret = focus.makeTextInfo(textInfos.POSITION_CARET)
 		except:
@@ -749,6 +740,7 @@ class CheckBox(Button):
 
 class RadioButton(CheckBox):
 	baseRole = controlTypes.Role.RADIOBUTTON
+#* text support
 class Text(Win32):
 	baseRole = controlTypes.Role.STATICTEXT
 	def _get_states(self):
@@ -759,6 +751,120 @@ class Text(Win32):
 		return(states)
 	def setFocus(self):
 		pass
+#* combo box support
+#** combo box messages
+CB_GETCOUNT = 326
+CB_GETLBTEXTLEN = 329
+CB_GETLBTEXT = 328
+CB_GETCURSEL = 327
+CB_SHOWDROPDOWN = 335
+class ComboBox(Win32):
+	baseRole = controlTypes.Role.COMBOBOX
+	def _get_win32Name(self):
+		focusIndex = user32.SendMessageW(self.windowHandle, CB_GETCURSEL, 0, 0)
+		size = user32.SendMessageW(self.windowHandle, CB_GETLBTEXTLEN, focusIndex, 0)
+		buffer = create_unicode_buffer(size*2)
+		res = sendMessageInProcess(self.windowHandle, CB_GETLBTEXT, focusIndex, buffer, buffer, size)
+		return(buffer.value)
+	def _get_value(self):
+		return(self.displayText or self.windowText or self.win32Name)
+	def _get_name(self):
+		# Todo, improve it so it fetches the window text from the previous window
+		return("")
+	def getActionName(self, index = None):
+		# Translators: The action name for combo boxes
+		actionName = _("Open")
+		return(actionName)
+	def doWindowAction(self):
+		user32.SendMessageW(self.windowHandle, CB_SHOWDROPDOWN, 1, 0)
+	@staticmethod
+	def isSupported(windowHandle):
+		return(bool(user32.SendMessageW(windowHandle, CB_GETCOUNT, 0, 0)))
+
+#* list view support
+#** list view messages
+LVM_FIRST = 0x1000
+LVM_GETITEMTEXTW = LVM_FIRST + 115
+LVM_GETITEMCOUNT = LVM_FIRST + 4
+LVM_GETITEMRECT = LVM_FIRST + 14
+LVM_GETSELECTIONMARK = LVM_FIRST + 66
+LVM_HITTEST = LVM_FIRST + 18
+
+#** list view structures
+LVIF_TEXT = 0x0000001
+# As we are sending messages to a different application that will write information to our structure
+# define 2 structures, one 32 bit and 1 64 bit.
+# We can't simply set variables expecting pointers as a pointer data type, in case we are sending messages to an application that has a different bitness to NVDA, e.g, NVDA is 64 bit, and the target application is 32 bit.
+# Attempting this would have resulted in the application getting a too small or too large pointer, reading random parts of memory.
+class LVITEM32(Structure):
+	_fields_ = [
+		("mask", c_uint),
+		("item", c_int),
+		("subItem", c_int),
+		("state", c_uint),
+		("stateMask", c_uint),
+		("string", c_ulong),
+		("textMax", c_int),
+		("image", c_int),
+		("lParam", LPARAM),
+		("indent", c_int),
+		("groupId", c_int),
+		("columns", c_uint),
+		("pColumns", c_void_p),
+		("callFMT", c_int),
+		("group", c_int)
+	]
+
+class LVITEM64(Structure):
+	_fields_ = [
+		("mask", c_uint),
+		("item", c_int),
+		("subItem", c_int),
+		("state", c_uint),
+		("stateMask", c_uint),
+		("string", c_ulonglong),
+		("textMax", c_int),
+		("image", c_int),
+		("lParam", LPARAM),
+		("indent", c_int),
+		("groupId", c_int),
+		("columns", c_uint),
+		("pColumns", c_void_p),
+		("callFMT", c_int),
+		("group", c_int)
+	]
+
+class LV_HITTESTINFO(Structure):
+	_fields_ = [
+		("pt", POINT),
+		("flags", c_uint),
+		("iItem", c_int),
+		("iSubItem", c_int),
+		("iGroup", c_int)
+	]
+
+class ListView(ComplexParent):
+	baseRole = controlTypes.Role.LIST
+	# Translators: an option in a combo box
+	displayName = _("list view")
+	def _get_focusIndex(self):
+		return(user32.SendMessageW(self.windowHandle, LVM_GETSELECTIONMARK, 0, 0))
+	def _get_subClass(self):
+		return(ListViewItem)
+	def _get_childCount(self):
+		return(user32.SendMessageW(self.windowHandle, LVM_GETITEMCOUNT, 0, 0))
+	def getIndexFromPoint(self, x, y):
+		point = POINT(x, y)
+		user32.ScreenToClient(self.windowHandle, addressof(point))
+		info = LV_HITTESTINFO(point)
+		res = sendMessageInProcess(self.windowHandle, LVM_HITTEST, 0, addressof(info), addressof(info), sizeof(info))
+		return(res)
+	@staticmethod
+	def isSupported(windowHandle):
+		return(bool(user32.SendMessageW(self.windowHandle, LVM_GETITEMCOUNT, 0, 0)))
+class ListViewItem(Complex):
+	pass
+
 #* Tab control support
 #** tab control messages
 TCM_FIRST = 0x1300
@@ -772,6 +878,10 @@ TCM_GETITEMA = TCM_FIRST+5
 TCM_GETITEMW = TCM_FIRST+60
 #** tab control structures
 TCIF_TEXT = 0x0001
+# As we are sending messages to a different application that will write information to our structure
+# define 2 structures, one 32 bit and 1 64 bit.
+# We can't simply set variables expecting pointers as a pointer data type, in case we are sending messages to an application that has a different bitness to NVDA, e.g, NVDA is 64 bit, and the target application is 32 bit.
+# Attempting this would have resulted in the application getting a too small or too large pointer, reading random parts of memory
 class TCITEMW32(Structure):
 	_fields_ = [
 		("mask", c_uint),
@@ -1045,7 +1155,7 @@ class DisplayChunk(Win32):
 				break
 		if moved:
 			obj = DisplayChunk(windowHandle = self.windowHandle, info = info, parent = self.parent)
-			return(obj)
+			return(obj if obj != self else None)
 	def _get_next(self):
 		return(self._move(1))
 	def _get_previous(self):
@@ -1168,7 +1278,8 @@ supportedClasses = [
 	ListBox,
 	Toolbar,
 	DisplayModelEdit,
-	Unknown
+	Unknown,
+	ComboBox
 ]
 configNamesToClasses = {}
 for i in supportedClasses:
@@ -1274,16 +1385,19 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		super(GlobalPlugin, self).__init__()
 		UIAHandler.UIAHandler.isUIAWindow = newIsUIAWindow
 		global cfg
+		f = None
 		try:
 			open(configPath, 'x')
 		except:
 			pass
-		f = open(configPath, )
 		try:
+			f = open(configPath, )
 			cfg = json.load(f)
-		except:
-			pass
-		f.close()
+			f.close()
+		except Exception as Ex:
+			log.error(Ex)
+		
+		
 		self.displayObj = None
 		config.post_configSave.register(saveConfig)
 		gui.settingsDialogs.NVDASettingsDialog.categoryClasses.append(EnhancedControlSupportSettingsPanel)
@@ -1374,6 +1488,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			clsList.insert(0, TimerMixin)
 		if not (conf and conf[0] == "normal"):
 			clsList.insert(0, ErrorHandler2)
+			pass
 
 
 	@script(
@@ -1432,4 +1547,4 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			message = _('Unable to find control type')
 			ui.message(message)
 			return
-		ui.message(cls.baseRole.displayString if not cls.displayName else cls.displayName)
+		ui.message(cls.baseRole.displayString if not cls.displayName else cls.displayName)
