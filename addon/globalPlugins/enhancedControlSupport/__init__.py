@@ -295,8 +295,11 @@ class EqFixer(WindowGuard):
 	def __ne__(self, other):
 		return not self.__eq__(other)
 
-
-
+class FocusEventFixer(EqFixer):
+	# If we don't explisitly allow IAccessible and UIA focus events when WindowGuard and NVDAObjectGuard is used, they won't fire.
+	shouldAllowIAccessibleFocusEvent = True
+	shouldAllowUIAFocusEvent = True
+	
 
 class ErrorHandler(NVDAObject):
 	def _getPropertyAndHandleError(self, propertyName, onError):
@@ -378,9 +381,6 @@ class Win32(window.Window):
 	baseRole = controlTypes.Role.WINDOW
 	subClass = None
 	clicks = 1 # the number of clicks that normaly are required to activate a control
-	# If we don't explisitly allow IAccessible and UIA focus events, they won't fire.
-	shouldAllowIAccessibleFocusEvent = True
-	shouldAllowUIAFocusEvent = True
 	def _get_role(self):
 		return(self.baseRole)
 	def _get_win32Name(self):
@@ -636,7 +636,7 @@ class EnhancedUIASupport(UIA.UIA):
 			TextInfo = EnhancedUIATextInfo
 		return(TextInfo)
 
-class EnhancedTypingMixin():
+class EnhancedTypingMixin(NVDAObject):
 	def script_caret_backspaceCharacter(self, gesture):
 		info = api.getCaretPosition().copy()
 		info.move(textInfos.UNIT_CHARACTER, -1)
@@ -844,7 +844,8 @@ class LV_HITTESTINFO(Structure):
 		("iSubItem", c_int),
 		("iGroup", c_int)
 	]
-
+#* list view constants
+LVIR_BOUNDS = 0
 class ListView(ComplexParent):
 	baseRole = controlTypes.Role.LIST
 	# Translators: an option in a combo box
@@ -863,10 +864,27 @@ class ListView(ComplexParent):
 		return(res)
 	@staticmethod
 	def isSupported(windowHandle):
-		return(bool(user32.SendMessageW(self.windowHandle, LVM_GETITEMCOUNT, 0, 0)))
+		return(bool(user32.SendMessageW(windowHandle, LVM_GETITEMCOUNT, 0, 0)))
+
 class ListViewItem(Complex):
 	baseRole = controlTypes.Role.LISTITEM
-
+	def _get_win32Name(self):
+		buffer = create_unicode_buffer(255)
+		maxTextLen = 255*sizeof(c_wchar)
+		internalBuffer = kernel32.VirtualAllocEx(self.processHandle, 0, maxTextLen, winKernel.MEM_COMMIT, winKernel.PAGE_READWRITE)
+		if self.appModule.is64BitProcess:
+			listInfo = LVITEM64(LVIF_TEXT, self.index, 0, 0, 0, internalBuffer, maxTextLen)
+		else:
+			listInfo = LVITEM32(LVIF_TEXT, self.index, 0, 0, 0, internalBuffer, maxTextLen)
+		sendMessageInProcess(self.windowHandle, LVM_GETITEMTEXTW, self.index, addressof(listInfo), addressof(listInfo), sizeof(listInfo), pointerToCheck = buffer, internalPointerToCheck = internalBuffer)
+		kernel32.ReadProcessMemory(self.processHandle, internalBuffer, buffer, 255*sizeof(c_wchar), 0)
+		kernel32.VirtualFreeEx(self.processHandle, internalBuffer, 0, winKernel.MEM_RELEASE)
+		return(buffer.value)
+	def _get_location(self):
+		rect = RECT(LVIR_BOUNDS)
+		sendMessageInProcess(self.windowHandle, LVM_GETITEMRECT, self.index, addressof(rect), addressof(rect), sizeof(rect))
+		rect = clientRectToScreenRect(self.windowHandle, rect)
+		return(locationHelper.RectLTWH.fromCompatibleType(rect))
 #* Tab control support
 #** tab control messages
 TCM_FIRST = 0x1300
@@ -1274,14 +1292,15 @@ supportedClasses = [
 	Edit,
 	Button,
 	CheckBox,
+	ComboBox,
 	RadioButton,
 	Text,
 	Tab,
 	ListBox,
+	ListView,
 	Toolbar,
 	DisplayModelEdit,
 	Unknown,
-	ComboBox
 ]
 configNamesToClasses = {}
 for i in supportedClasses:
@@ -1419,9 +1438,6 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		if not isinstance(obj, window.Window):
 			return
 		conf = getConfigFromWindow(obj.windowHandle)
-		# Check if any of the classes in clsList is a subclass of Complex
-		# If they are, we are in an unknown control, and should not rely on events
-
 		if not issubclass(obj.APIClass, Win32) and not "kwargsFromSuper" in obj.APIClass.__dict__:
 			return
 		newCls = None
@@ -1443,7 +1459,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 					if i == obj.APIClass or i in obj.APIClass.mro():
 						continue
 					clsList.remove(i)
-#				clsList.remove(obj.APIClass)
+				#clsList.remove(obj.APIClass)
 				if conf:
 					# Only insert the guard classes if the user explisitly has overwritten support for a control.
 					# If they are in a content generic client, inserting them will make inconsistant behavior, as they will only be inserted in the ContentGenericClient itself, and not potential WindowRoot and scrollbar objects
@@ -1451,6 +1467,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 					clsList.insert(0, NVDAObjectGuard)
 					clsList.insert(0, WindowGuard)
 					clsList.insert(0, EqFixer)
+					clsList.insert(0, FocusEventFixer)
 				clsList.insert(0, Win32)
 				clsList.insert(0, newCls)
 				# Since all classes from global plugins that was in clsList are now removed,
@@ -1490,7 +1507,6 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			clsList.insert(0, TimerMixin)
 		if config.conf["enhancedControlSupport"]["handleErrors"] and not (conf and conf[0] == "normal"):
 			clsList.insert(0, ErrorHandler2)
-			pass
 
 
 	@script(
