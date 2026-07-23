@@ -208,8 +208,8 @@ def getKeyFromWindow(windowHandle, bypassDisabled = False):
 		cachedAppNames.update({processID: appName})
 	className = winUser.getClassName(windowHandle)
 	return(appName+className)
-def getConfigFromWindow(windowHandle):
-	key = getKeyFromWindow(windowHandle)
+def getConfigFromWindow(windowHandle, bypassDisabled = False):
+	key = getKeyFromWindow(windowHandle, bypassDisabled = bypassDisabled)
 	c = cfg.get(key)
 	return c
 def shouldUseWin32(windowHandle):
@@ -436,6 +436,15 @@ class Win32(window.Window):
 
 	def setFocus(self):
 		user32.SetForegroundWindow(self.windowHandle)
+	@staticmethod
+	def _makeSettings(self, groupSizer, groupBox, groupHelper, conf):
+		pass
+	@staticmethod
+	def _onSave(self, groupSizer, groupBox, groupHelper):
+		return(dict())
+	@staticmethod
+	def _getDefaultConfig():
+		return(dict())
 class ComplexParent(Win32):
 	shouldLookAtClassName = False
 	def isValid(self, index):
@@ -443,10 +452,7 @@ class ComplexParent(Win32):
 		if childCount:
 			if childCount > index and index >=0:
 				return(True)
-			return(False)
-		obj = self.subClass(windowHandle = self.windowHandle, parent = self, index = index)
-		valid = bool(obj.name or obj.location and any(obj.location))
-		return(valid)
+		return(False)
 	def _get_name(self):
 		if not self.childCount:
 			return(super(ComplexParent, self).name)
@@ -488,7 +494,37 @@ class ComplexParent(Win32):
 			return
 		obj = self.subClass(windowHandle = self.windowHandle, index = index, parent = self)
 		return(obj)
+	@staticmethod
+	def _makeSettings(self, groupSizer, groupBox, helper, conf):
+		#Translators: A label for a check box
+		label = _("Label items by their display text, if possible")
+		self.displayLabel = helper.addItem(wx.CheckBox(groupBox, label = label))
+		if conf and conf[3].get("displayLabel") in conf[3].values():
+			self.displayLabel.SetValue(conf[3].get("displayLabel"))
+		else:
+			self.displayLabel.SetValue(True)
+	@staticmethod
+	def _onSave(self, groupSizer, groupBox, groupHelper):
+		d = {"displayLabel": self.displayLabel.GetValue()}
+		return(d)
+	@staticmethod
+	def _getDefaultConfig():
+		d = {"displayLabel": True}
 class Complex(Win32):
+	def _get_name(self):
+		# I don't know how to handle none unicode windows, so rely on display text for them if possible
+		# I choose to prioritise win32Name here, as it genererly is more reliable than displayText.
+		# In addition, the user always has access to the display text via screen review or the Unknown class
+		conf = getConfigFromWindow(self.windowHandle)
+		displayText = self.displayText or self.win32Name
+		win32 = self.win32Name or self.displayText
+		if not conf:
+			return(displayText)
+		if not self.isWindowUnicode:
+			return(displayText)
+		if conf[3].get("displayLabel"):
+			return(displayText)
+		return(win32)
 	shouldLookAtClassName = False
 	def _isEqual(self, other):
 		eq = self.index == other.index and self.windowHandle == other.windowHandle
@@ -1302,11 +1338,16 @@ supportedClasses = [
 	DisplayModelEdit,
 	Unknown,
 ]
+class SettingsStorer():
+	pass
+
 configNamesToClasses = {}
+individualSettings = dict()
 for i in supportedClasses:
 	configNamesToClasses.update({i.__name__: i})
 	supportedControls.append(i.baseRole.displayString if not i.displayName else i.displayName)
 	classNamesToNVDAControlTypeNames.update({i.__name__: i.baseRole.displayString if not i.displayName else i.displayName})
+	individualSettings.update({i.__name__: SettingsStorer()})
 supportedControls.sort()
 # Translators: an option in a combo box
 supportedControls.insert(0, _('Use normal add-on behavior'))
@@ -1329,6 +1370,9 @@ class ControlDialog(SettingsDialog):
 		self.key = getKeyFromWindow(self.obj.windowHandle, bypassDisabled = True)
 		self.name = name
 		self.role = role
+		self.conf = getConfigFromWindow(obj.windowHandle, bypassDisabled = True)
+		self.groups = dict()
+		self.oldIndex = 0
 		super(ControlDialog, self).__init__(*args, **kwargs)
 
 	def makeSettings(self, settingsSizer):
@@ -1350,6 +1394,16 @@ class ControlDialog(SettingsDialog):
 		# Translators: A label for a combo box
 		label = _('Control type:')
 		self.choice = helper.addLabeledControl(label, wx.Choice, choices = supportedControls)
+		for i in supportedClasses:
+			groupSizer = wx.StaticBoxSizer(wx.VERTICAL, self)
+			
+			groupBox = groupSizer.GetStaticBox()
+			groupHelper = gui.guiHelper.BoxSizerHelper(self, sizer=groupSizer)
+			helper.addItem(groupHelper)
+			self.groups.update({i.__name__: (groupSizer, groupBox, groupHelper)})
+			groupBox.Hide()
+			i._makeSettings(individualSettings[i.__name__], groupSizer, groupBox, groupHelper, self.conf)
+		self.choice.Bind(wx.EVT_CHOICE, self.onControlTypeChange)
 		# Translators: the label for a check box
 		label2 = _('rely on events. Only change if you know what you are doing')
 		self.checkBox = wx.CheckBox(self, label = label2)
@@ -1364,24 +1418,48 @@ class ControlDialog(SettingsDialog):
 		helper.addItem(self.disable)
 		self.disable.SetValue(disabled)
 	def postInit(self):
-
-		conf = cfg.get(self.key)
+		conf = self.conf
 		if not conf:
 			self.choice.SetSelection(0)
 		else:
 			className = conf[0]
 			type = classNamesToNVDAControlTypeNames.get(className)
 			index = supportedControls.index(type)
+			self.oldIndex = index
 			self.choice.SetSelection(index)
 			eventSupport = conf[1]
 			self.checkBox.SetValue(eventSupport)
-			# Backword compatibility with erlier versions of the addon
-			if len(conf) <= 2:
-				conf.append(False)
 			enhancedTyping = conf[2]
 			self.enhancedTyping.SetValue(enhancedTyping)
+			groups = self.groups.get(className)
+			if groups:
+				groups[1].Show()
 		
 		self.choice.SetFocus()
+	def onControlTypeChange(self, evt):
+		oldIndex = self.oldIndex
+		newIndex = evt.GetSelection()
+		oldName = supportedControls[oldIndex]
+		newName = supportedControls[newIndex]
+		newName = self.getClassNameFromNVDAControlTypeName(newName)
+		oldName = self.getClassNameFromNVDAControlTypeName(oldName)
+		oldGroups = None
+		newGroups = None
+		if oldName:
+			oldGroups = self.groups.get(oldName)
+		if newName:
+			newGroups = self.groups.get(newName)
+		if oldGroups:
+			oldGroups[1].Hide()
+		if newGroups:
+			newGroups[1].Show()
+		self.oldIndex = newIndex
+	def getClassNameFromNVDAControlTypeName(self, name):
+		for i in classNamesToNVDAControlTypeNames.keys():
+			if classNamesToNVDAControlTypeNames.get(i) == name:
+				name = i
+				break
+		return(name)
 	def onOk(self, *args, **kwargs):
 		global disabled
 		disabled = self.disable.GetValue()
@@ -1393,12 +1471,17 @@ class ControlDialog(SettingsDialog):
 			return(super(ControlDialog, self).onOk(*args, **kwargs))
 		conf = {}
 		name = supportedControls[selection]
-		for i in classNamesToNVDAControlTypeNames.keys():
-			if classNamesToNVDAControlTypeNames.get(i) == name:
-				name = i
+		name = self.getClassNameFromNVDAControlTypeName(name)
+		groups = self.groups.get(name)
 		checked = self.checkBox.GetValue()
 		enhancedTyping = self.enhancedTyping.GetValue()
-		conf = [name, checked, enhancedTyping]
+		controlSpesific = dict()
+		cls = None
+		if groups:
+			cls = configNamesToClasses.get(name)
+		if cls:
+			controlSpesific = cls._onSave(individualSettings[cls.__name__], *groups)
+		conf = [name, checked, enhancedTyping, controlSpesific]
 		cfg.update({self.key: conf})
 		return(super(ControlDialog, self).onOk(*args, **kwargs))
 class GlobalPlugin(globalPluginHandler.GlobalPlugin):
@@ -1422,6 +1505,18 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		self.displayObj = None
 		config.post_configSave.register(saveConfig)
 		gui.settingsDialogs.NVDASettingsDialog.categoryClasses.append(EnhancedControlSupportSettingsPanel)
+		for i in cfg.values():
+			# Backword compatibility with erlier versions of the addon
+			if len(i) <= 2:
+				i.append(False)
+			cls = None
+			if len(i) <= 3:
+				cls = configNamesToClasses[i[0]]
+				if cls:
+					d = cls._getDefaultConfig()
+				else:
+					d = dict()
+				i.append(d)
 	def terminate(self):
 		super(GlobalPlugin, self).terminate()
 		UIAHandler.UIAHandler.isUIAWindow = oldIsUIAWindow
