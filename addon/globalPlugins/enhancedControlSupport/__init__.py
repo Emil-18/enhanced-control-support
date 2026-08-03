@@ -751,7 +751,8 @@ class DisplayModelEdit(Edit):
 		# Translators: a label for a check box
 		label = _("Redraw the control on caret movement, useful if the content doesn't seam to update when typing or deleting text")
 		self.redrawOnCaretMove = groupHelper.addItem(wx.CheckBox(groupBox, label = label))
-		self.redrawOnCaretMove.SetValue(conf[3].get("redrawOnCaretMove"))
+		
+		self.redrawOnCaretMove.SetValue(conf[3].get("redrawOnCaretMove") if conf and conf[3].get("redrawOnCaretMove")else False)
 	@staticmethod
 	def _onSave(self, groupSizer, groupBox, groupHelper):
 		d = {"redrawOnCaretMove": self.redrawOnCaretMove.GetValue()}
@@ -761,7 +762,7 @@ class DisplayModelEdit(Edit):
 		d = {"redrawOnCaretMove": False}
 		return(d)
 	def event_caret(self):
-		conf = getConfigFromWindow(self.windowHandle):
+		conf = getConfigFromWindow(self.windowHandle)
 		if not conf:
 			return(super(DisplayModelEdit, self).event_caret())
 		if conf[3].get("redrawOnCaretMove"):
