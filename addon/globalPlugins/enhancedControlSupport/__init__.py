@@ -746,6 +746,27 @@ class DisplayModelEdit(Edit):
 	shouldLookAtClassName = False
 	# Translators: an option in a combo box
 	displayName = _("display text edit")
+	@staticmethod
+	def _makeSettings(self, groupSizer, groupBox, groupHelper, conf):
+		# Translators: a label for a check box
+		label = _("Redraw the control on caret movement, useful if the content doesn't seam to update when typing or deleting text")
+		self.redrawOnCaretMove = groupHelper.addItem(wx.CheckBox(groupBox, label = label))
+		self.redrawOnCaretMove.SetValue(conf[3].get("redrawOnCaretMove"))
+	@staticmethod
+	def _onSave(self, groupSizer, groupBox, groupHelper):
+		d = {"redrawOnCaretMove": self.redrawOnCaretMove.GetValue()}
+		return(d)
+	@staticmethod
+	def _getDefaultConfig():
+		d = {"redrawOnCaretMove": False}
+		return(d)
+	def event_caret(self):
+		conf = getConfigFromWindow(self.windowHandle):
+		if not conf:
+			return(super(DisplayModelEdit, self).event_caret())
+		if conf[3].get("redrawOnCaretMove"):
+			self.redraw()
+		super(DisplayModelEdit, self).event_caret()
 	def _get_TextInfo(self):
 		return(displayModel.EditableTextDisplayModelTextInfo)
 	@staticmethod
