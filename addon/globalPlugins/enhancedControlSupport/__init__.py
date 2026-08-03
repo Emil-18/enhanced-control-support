@@ -741,7 +741,40 @@ class Edit(edit.UnidentifiedEdit, Win32):
 	def isSupported(windowHandle):
 		res = winUser.sendMessage(windowHandle, EM_GETLINECOUNT, 0, 0)
 		return(bool(res))
-
+	@staticmethod
+	def _makeSettings(self, groupSizer, groupBox, groupHelper, conf):
+		# Translators: a label for a combo box
+		label = _("Edit API version:")
+		choices = [
+			# Translators: an option in a combo box
+			_("-1 (let NVDA decide)"),
+			# Translators: an option in a combo box
+			_("0 (for none-rich edit controls, such as the edit control found in the run dialog)"),
+			("1"),
+			("2"),
+			("3"),
+			("4"),
+			("5")
+		]
+		self.editAPIVersion = groupHelper.addLabeledControl(label, wx.Choice, choices = choices)
+		if conf and conf[3].get("editAPIVersion"):
+			selection = conf[3].get("editAPIVersion", 0)
+		else:
+			selection = 0
+		self.editAPIVersion.SetSelection(selection)
+	@staticmethod
+	def _onSave(self, groupSizer, groupBox, groupHelper):
+		d = {"editAPIVersion": self.editAPIVersion.GetSelection()}
+		return(d)
+	@staticmethod
+	def _getDefaultConfig():
+		d = {"editAPIVersion": 0}
+		return(d)
+	def _get_editAPIVersion(self):
+		conf = getConfigFromWindow(self.windowHandle)
+		if not conf:
+			return(-1)
+		return(conf[3].get("editAPIVersion")-1)
 class DisplayModelEdit(Edit):
 	shouldLookAtClassName = False
 	# Translators: an option in a combo box
