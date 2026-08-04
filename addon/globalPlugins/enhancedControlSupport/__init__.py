@@ -779,6 +779,7 @@ class DisplayModelEdit(Edit):
 	shouldLookAtClassName = False
 	# Translators: an option in a combo box
 	displayName = _("display text edit")
+	_oldCaret = None
 	@staticmethod
 	def _makeSettings(self, groupSizer, groupBox, groupHelper, conf):
 		# Translators: a label for a check box
@@ -796,10 +797,12 @@ class DisplayModelEdit(Edit):
 		return(d)
 	def event_caret(self):
 		conf = getConfigFromWindow(self.windowHandle)
-		if not conf:
+		caretPos = api.getCaretPosition()
+		if caretPos  == self._oldCaret or not conf:
 			return(super(DisplayModelEdit, self).event_caret())
 		if conf[3].get("redrawOnCaretMove"):
 			self.redraw()
+		self._oldCaret = caretPos
 		super(DisplayModelEdit, self).event_caret()
 	def _get_TextInfo(self):
 		return(displayModel.EditableTextDisplayModelTextInfo)
