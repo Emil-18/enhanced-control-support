@@ -456,9 +456,7 @@ class ComplexParent(Win32):
 				return(True)
 		return(False)
 	def _get_name(self):
-		if not self.childCount:
-			return(super(ComplexParent, self).name)
-		return("")
+		return(self.win32Name)
 	def _get_subClass(self):
 		return(None)
 	def _get_childCount(self):
@@ -505,6 +503,7 @@ class ComplexParent(Win32):
 			self.displayLabel.SetValue(conf[3].get("displayLabel"))
 		else:
 			self.displayLabel.SetValue(True)
+			
 	@staticmethod
 	def _onSave(self, groupSizer, groupBox, groupHelper):
 		d = {"displayLabel": self.displayLabel.GetValue()}
