@@ -435,7 +435,9 @@ class Win32(window.Window):
 		return('')
 
 	def setFocus(self):
-		user32.SetForegroundWindow(self.windowHandle)
+		focus = api.getFocusObject():
+		if focus.windowHandle != self.windowHandle:
+			user32.SetForegroundWindow(self.windowHandle)
 	@staticmethod
 	def _makeSettings(self, groupSizer, groupBox, groupHelper, conf):
 		pass
