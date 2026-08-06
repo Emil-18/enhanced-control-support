@@ -435,7 +435,7 @@ class Win32(window.Window):
 		return('')
 
 	def setFocus(self):
-		focus = api.getFocusObject():
+		focus = api.getFocusObject()
 		if focus.windowHandle != self.windowHandle:
 			user32.SetForegroundWindow(self.windowHandle)
 	@staticmethod
@@ -454,13 +454,23 @@ class ComplexParent(Win32):
 		if childCount:
 			if childCount > index and index >=0:
 				return(True)
-		return(False)
+		conf = getConfigFromWindow(self.windowHandle)
+		if not conf:
+			return(False)
+		if not conf[3].get("guessIfUnavailable"):
+			return(False)
+		childObj = self.subClass(windowHandle = self.windowHandle, parent = self, index = index)
+		return(bool(childObj.win32Name or childObj.location and any(childObj.location)))
 	def _get_name(self):
 		return(self.win32Name)
 	def _get_subClass(self):
 		return(None)
 	def _get_childCount(self):
 		return(0)
+	def getChild(self, index):
+		if self.isValid(index):
+			return(self.subClass(windowHandle = self.windowHandle, parent = self, index = index))
+		return(None)
 	isComplex = True
 	def _get_firstChild(self):
 
@@ -469,15 +479,21 @@ class ComplexParent(Win32):
 		obj = self.subClass(windowHandle = self.windowHandle, parent = self, index = 0)
 		return(obj)
 	def _get_lastChild(self):
-		index = self.childCount
-		if not index:
+		index = 0
+		isValid = False
+		childCount = self.childCount
+		if childCount:
+			index = childCount-1
+		
+		else:
 			while self.isValid(index):
 				index += 1
-			if index:
-				index -= 1
+				isValid = True
 		if not index:
 			return(window.Window._get_lastChild(self))
-		return(self.subClass(windowHandle = self.windowHandle, parent = self, index = self.childCount-1))
+		if isValid:
+			index = index-1
+		return(self.subClass(windowHandle = self.windowHandle, parent = self, index = index))
 	def _get_focusIndex(self):
 		return(-1)
 	def _get_focusRedirect(self):
@@ -499,18 +515,25 @@ class ComplexParent(Win32):
 		#Translators: A label for a check box
 		label = _("Label items by their display text, if possible")
 		self.displayLabel = helper.addItem(wx.CheckBox(groupBox, label = label))
-		if conf and conf[3].get("displayLabel") in conf[3].values():
+		if conf and "displayLabel" in conf[3].keys():
 			self.displayLabel.SetValue(conf[3].get("displayLabel"))
 		else:
 			self.displayLabel.SetValue(True)
-			
+		# Translators: a label for a check box
+		label = _("When unable to count underlying objects, (such as tabs in a tab control), try to fetch an objects name and location to see if it is a valid object.\nThis could Theoretically make NVDA work in more situations, but it might crash the application NVDA is interacting with.\nAs of now, this hasn't been known to provide more access in any real world situation")
+		self.guessIfUnavailable = helper.addItem(wx.CheckBox(groupBox, label = label))
+		if conf and "guessIfUnavailable" in conf[3].keys():
+			self.guessIfUnavailable.SetValue(conf[3].get("guessIfUnavailable"))
+		else:
+			self.guessIfUnavailable.SetValue(False)
 	@staticmethod
 	def _onSave(self, groupSizer, groupBox, groupHelper):
-		d = {"displayLabel": self.displayLabel.GetValue()}
+		d = {"displayLabel": self.displayLabel.GetValue(), "guessIfUnavailable": self.guessIfUnavailable.GetValue()}
 		return(d)
 	@staticmethod
 	def _getDefaultConfig():
-		d = {"displayLabel": True}
+		d = {"displayLabel": True, "guessIfUnavailable": False}
+		return(d)
 class Complex(Win32):
 	def _get_name(self):
 		# I don't know how to handle none unicode windows, so rely on display text for them if possible
