@@ -154,7 +154,7 @@ def clientRectToScreenRect(window, rect):
 	user32.ClientToScreen(window, c_void_p(addressof(point2)))
 	newRect = RECT(point1.x, point1.y, point2.x, point2.y)
 	return(newRect)
-def sendMessageInProcess(hwnd, msg, wParam, lParam, localBuffer, size, shouldTryWithLocalMemoryAddress = True, pointerToCheck = None, internalPointerToCheck = None):
+def sendMessageInProcess(hwnd, msg, wParam, lParam, localBuffer, size, shouldTryWithLocalMemoryAddress = False, pointerToCheck = None, internalPointerToCheck = None):
 	processHandle = oleacc.GetProcessHandleFromHwnd(hwnd)
 	if not pointerToCheck:
 		pointerToCheck = localBuffer
@@ -454,6 +454,7 @@ class ComplexParent(Win32):
 		if childCount:
 			if childCount > index and index >=0:
 				return(True)
+			return(False)
 		conf = getConfigFromWindow(self.windowHandle)
 		if not conf:
 			return(False)
@@ -905,8 +906,14 @@ LVM_GETITEMTEXTW = LVM_FIRST + 115
 LVM_GETITEMCOUNT = LVM_FIRST + 4
 LVM_GETITEMRECT = LVM_FIRST + 14
 LVM_GETSELECTIONMARK = LVM_FIRST + 66
+LVM_SETSELECTIONMARK = LVM_FIRST+67
 LVM_HITTEST = LVM_FIRST + 18
-
+HDM_FIRST = 0x1200
+HDM_GETITEMCOUNT = HDM_FIRST+0
+LVM_GETHEADER = LVM_FIRST+31
+LVM_GETSUBITEMRECT = LVM_FIRST+56
+LVM_GETITEMSTATE = LVM_FIRST+44
+LVIS_SELECTED = 0x0002
 #** list view structures
 LVIF_TEXT = 0x0000001
 # As we are sending messages to a different application that will write information to our structure
@@ -983,23 +990,79 @@ class ListView(ComplexParent):
 
 class ListViewItem(Complex):
 	baseRole = controlTypes.Role.LISTITEM
-	def _get_win32Name(self):
+	def _getSubItemName(self, subItemIndex):
 		buffer = create_unicode_buffer(255)
 		maxTextLen = 255*sizeof(c_wchar)
 		internalBuffer = kernel32.VirtualAllocEx(self.processHandle, 0, maxTextLen, winKernel.MEM_COMMIT, winKernel.PAGE_READWRITE)
 		if self.appModule.is64BitProcess:
-			listInfo = LVITEM64(LVIF_TEXT, self.index, 0, 0, 0, internalBuffer, maxTextLen)
+			listInfo = LVITEM64(LVIF_TEXT, self.index, subItemIndex, 0, 0, internalBuffer, maxTextLen)
 		else:
-			listInfo = LVITEM32(LVIF_TEXT, self.index, 0, 0, 0, internalBuffer, maxTextLen)
+			listInfo = LVITEM32(LVIF_TEXT, self.index, subItemIndex, 0, 0, internalBuffer, maxTextLen)
 		sendMessageInProcess(self.windowHandle, LVM_GETITEMTEXTW, self.index, addressof(listInfo), addressof(listInfo), sizeof(listInfo), pointerToCheck = buffer, internalPointerToCheck = internalBuffer)
 		kernel32.ReadProcessMemory(self.processHandle, internalBuffer, buffer, 255*sizeof(c_wchar), 0)
 		kernel32.VirtualFreeEx(self.processHandle, internalBuffer, 0, winKernel.MEM_RELEASE)
 		return(buffer.value)
+	def _get_win32Name(self):
+		nameList = []
+		for i in range(0, self.childCount):
+			nameList.append(self._getSubItemName(i))
+		return("  ".join(nameList))
 	def _get_location(self):
 		rect = RECT(LVIR_BOUNDS)
 		sendMessageInProcess(self.windowHandle, LVM_GETITEMRECT, self.index, addressof(rect), addressof(rect), sizeof(rect))
 		rect = clientRectToScreenRect(self.windowHandle, rect)
 		return(locationHelper.RectLTWH.fromCompatibleType(rect))
+	def _get_childCount(self):
+		window = user32.SendMessageW(self.windowHandle, LVM_GETHEADER, 0, 0)
+		if not window:
+			return(0)
+		res = user32.SendMessageW(window, HDM_GETITEMCOUNT, 0, 0)
+		return(res)
+	def _get_firstChild(self):
+		if not self.childCount:
+			return
+		return(ListViewSubItem(subItemIndex = 0, parent = self))
+	def _get_lastChild(self):
+		if not self.childCount:
+			return
+		return(ListViewSubItem(subItemIndex = self.childCount-1, parent = self))
+	def _get_states(self):
+		states = super(ListViewItem, self).states
+		states.add(controlTypes.State.SELECTABLE)
+		if user32.SendMessageW(self.windowHandle, LVM_GETITEMSTATE, self.index, LVIS_SELECTED):
+			states.add(controlTypes.State.SELECTED)
+		return(states)
+	def setFocus(self):
+		super(ListViewItem, self).setFocus()
+		user32.SendMessageW(self.windowHandle, LVM_SETSELECTIONMARK, 0, self.index)
+class ListViewSubItem(ListViewItem):
+	baseRole = controlTypes.Role.TABLECELL
+	def _isEqual(self, other):
+		eq = self.subItemIndex == other.subItemIndex and self.parent == other.parent
+		return(eq)
+	def __init__(self, subItemIndex = None, parent = None):
+		super(ListViewSubItem, self).__init__(windowHandle = parent.windowHandle, index = parent.index, parent = parent)
+		self.parent = parent
+		self.subItemIndex = subItemIndex
+	def _get_win32Name(self):
+		return(self.parent._getSubItemName(self.subItemIndex))
+	def _get_location(self):
+		rect = RECT(self.subItemIndex+1)
+		sendMessageInProcess(self.windowHandle, LVM_GETSUBITEMRECT, self.index, addressof(rect), addressof(rect), sizeof(rect))
+		rect = clientRectToScreenRect(self.windowHandle, rect)
+		return(locationHelper.RectLTWH.fromCompatibleType(rect))
+	def _get_positionInfo(self):
+		d = {"indexInGroup": self.subItemIndex+1, "similarItemsInGroup": self.parent.childCount}
+		return(d)
+	firstChild = lastChild = None
+	def _get_next(self):
+		if self.subItemIndex == self.parent.childCount-1:
+			return
+		return(ListViewSubItem(subItemIndex = self.subItemIndex+1, parent = self.parent))
+	def _get_previous(self):
+		if self.subItemIndex == 0:
+			return
+		return(ListViewSubItem(subItemIndex = self.subItemIndex -1, parent = self.parent))
 #* Tab control support
 #** tab control messages
 TCM_FIRST = 0x1300
