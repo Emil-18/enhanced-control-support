@@ -1296,7 +1296,7 @@ class ToolbarButton(Complex):
 		buffer = create_unicode_buffer(255)
 		internalBuffer = kernel32.VirtualAllocEx(self.processHandle, 0, maxTextLen, winKernel.MEM_COMMIT, winKernel.PAGE_READWRITE)
 		tbButton = TBBUTTON(0, 0, 0, 0, 0, 0, internalBuffer)
-		sendMessageInProcess(self.windowHandle, TB_GETBUTTON, self.index, addressof(tbButton), addressof(tbButton), sizeof(tbButton))
+		sendMessageInProcess(self.windowHandle, TB_GETBUTTON, self.index, addressof(tbButton), addressof(tbButton), sizeof(tbButton), pointerToCheck = buffer, internalPointerToCheck = internalBuffer)
 		kernel32.ReadProcessMemory(self.processHandle, internalBuffer, buffer, 255*sizeof(c_wchar), 0)
 		kernel32.VirtualFreeEx(self.processHandle, internalBuffer, 0, winKernel.MEM_RELEASE)
 		name = buffer.value or ""
@@ -1305,8 +1305,58 @@ class ToolbarButton(Complex):
 
 		super(ToolbarButton, self).setFocus()
 		user32.SendMessageW(self.windowHandle, TB_SETINSERTMARK, self.index, 0)
+
+#* treeview support
+#** treeview messages
+TV_FIRST = 0x1100
+TVM_EXPAND = TV_FIRST+2
+TVM_GETCOUNT = TVM_FIRST+5
+TVM_GETITEMW = TV_FIRST+62
+TVM_GETITEMRECT = TV_FIRST+4
+TVM_GETITEMSTATE = TV_FIRST+39
+TVM_GETNEXTITEM = TV_FIRST+10
+#** treeview Navigation constants
+TVGN_CARET = 0x0009
+TVGN_CHILD = 0x0004
+TVGN_NEXT = 0x0001
+TVGN_PARENT = 0x0003
+TVGN_PREVIOUS = 0x0002
+
+#** treeview structures
+class TVITEMW32(Structure):
+	_fields_ = [
+		("mask", c_uint),
+		("HTREEITEM", c_uint),
+		("state", c_uint),
+		("stateMask", c_uint),
+		("text", c_uint),
+		("textMax", c_int),
+		("image", c_int),
+		("selectedImage", c_int),
+		("children" c_int),
+		("lParam", LPARAM)
+	]
+
+class TVITEMW64(Structure):
+	_fields_ = [
+		("mask", c_uint),
+		("HTREEITEM", c_uint64),
+		("state", c_uint),
+		("stateMask", c_uint),
+		("text", c_uint64),
+		("textMax", c_int),
+		("image", c_int),
+		("selectedImage", c_int),
+		("children", c_int),
+		("lParam", LPARAM)
+	]
+# Tree view controls are handled differently from other complex controls. They don't use an index, and they provide their own navigation between tree view items
+# Therefor, inheret from Win32, and implement everything manualy
+class TreeView(win32)
+
 #* support for unknown controls
 class DisplayChunk(Win32):
+	isComplex = True
 	def _get_presentationType(self):
 		return(self.presType_content)
 	def __init__(self, windowHandle = None, info = None, parent = None, unit = displayModel.UNIT_DISPLAYCHUNK):
