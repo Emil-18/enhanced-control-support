@@ -438,14 +438,14 @@ class Win32(window.Window):
 		focus = api.getFocusObject()
 		if focus.windowHandle != self.windowHandle:
 			user32.SetForegroundWindow(self.windowHandle)
-	@staticmethod
-	def _makeSettings(self, groupSizer, groupBox, groupHelper, conf):
+	@classmethod
+	def _makeSettings(cls, self, groupSizer, groupBox, groupHelper, conf):
 		pass
-	@staticmethod
-	def _onSave(self, groupSizer, groupBox, groupHelper):
+	@classmethod
+	def _onSave(cls, self, groupSizer, groupBox, groupHelper):
 		return(dict())
-	@staticmethod
-	def _getDefaultConfig():
+	@classmethod
+	def _getDefaultConfig(cls):
 		return(dict())
 class ComplexParent(Win32):
 	shouldLookAtClassName = False
@@ -511,8 +511,8 @@ class ComplexParent(Win32):
 			return
 		obj = self.subClass(windowHandle = self.windowHandle, index = index, parent = self)
 		return(obj)
-	@staticmethod
-	def _makeSettings(self, groupSizer, groupBox, helper, conf):
+	@classmethod
+	def _makeSettings(cls, self, groupSizer, groupBox, helper, conf):
 		#Translators: A label for a check box
 		label = _("Label items by their display text, if possible")
 		self.displayLabel = helper.addItem(wx.CheckBox(groupBox, label = label))
@@ -527,12 +527,12 @@ class ComplexParent(Win32):
 			self.guessIfUnavailable.SetValue(conf[3].get("guessIfUnavailable"))
 		else:
 			self.guessIfUnavailable.SetValue(False)
-	@staticmethod
-	def _onSave(self, groupSizer, groupBox, groupHelper):
+	@classmethod
+	def _onSave(cls, self, groupSizer, groupBox, groupHelper):
 		d = {"displayLabel": self.displayLabel.GetValue(), "guessIfUnavailable": self.guessIfUnavailable.GetValue()}
 		return(d)
-	@staticmethod
-	def _getDefaultConfig():
+	@classmethod
+	def _getDefaultConfig(cls):
 		d = {"displayLabel": True, "guessIfUnavailable": False}
 		return(d)
 class Complex(Win32):
@@ -766,8 +766,8 @@ class Edit(edit.UnidentifiedEdit, Win32):
 	def isSupported(windowHandle):
 		res = winUser.sendMessage(windowHandle, EM_GETLINECOUNT, 0, 0)
 		return(bool(res))
-	@staticmethod
-	def _makeSettings(self, groupSizer, groupBox, groupHelper, conf):
+	@classmethod
+	def _makeSettings(cls, self, groupSizer, groupBox, groupHelper, conf):
 		# Translators: a label for a combo box
 		label = _("Edit API version:")
 		choices = [
@@ -787,12 +787,12 @@ class Edit(edit.UnidentifiedEdit, Win32):
 		else:
 			selection = 0
 		self.editAPIVersion.SetSelection(selection)
-	@staticmethod
-	def _onSave(self, groupSizer, groupBox, groupHelper):
+	@classmethod
+	def _onSave(cls, self, groupSizer, groupBox, groupHelper):
 		d = {"editAPIVersion": self.editAPIVersion.GetSelection()}
 		return(d)
-	@staticmethod
-	def _getDefaultConfig():
+	@classmethod
+	def _getDefaultConfig(cls):
 		d = {"editAPIVersion": 0}
 		return(d)
 	def _get_editAPIVersion(self):
@@ -804,19 +804,19 @@ class DisplayModelEdit(Edit):
 	shouldLookAtClassName = False
 	# Translators: an option in a combo box
 	displayName = _("display text edit")
-	@staticmethod
-	def _makeSettings(self, groupSizer, groupBox, groupHelper, conf):
+	@classmethod
+	def _makeSettings(cls, self, groupSizer, groupBox, groupHelper, conf):
 		# Translators: a label for a check box
 		label = _("Redraw the control on caret movement, useful if the content doesn't seam to update when typing or deleting text")
 		self.redrawOnCaretMove = groupHelper.addItem(wx.CheckBox(groupBox, label = label))
 		
 		self.redrawOnCaretMove.SetValue(conf[3].get("redrawOnCaretMove") if conf and conf[3].get("redrawOnCaretMove")else False)
-	@staticmethod
-	def _onSave(self, groupSizer, groupBox, groupHelper):
+	@classmethod
+	def _onSave(cls, self, groupSizer, groupBox, groupHelper):
 		d = {"redrawOnCaretMove": self.redrawOnCaretMove.GetValue()}
 		return(d)
-	@staticmethod
-	def _getDefaultConfig():
+	@classmethod
+	def _getDefaultConfig(cls):
 		d = {"redrawOnCaretMove": False}
 		return(d)
 	def event_caret(self):
