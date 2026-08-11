@@ -1310,7 +1310,7 @@ class ToolbarButton(Complex):
 #** treeview messages
 TV_FIRST = 0x1100
 TVM_EXPAND = TV_FIRST+2
-TVM_GETCOUNT = TVM_FIRST+5
+TVM_GETCOUNT = TV_FIRST+5
 TVM_GETITEMW = TV_FIRST+62
 TVM_GETITEMRECT = TV_FIRST+4
 TVM_GETITEMSTATE = TV_FIRST+39
@@ -1333,7 +1333,7 @@ class TVITEMW32(Structure):
 		("textMax", c_int),
 		("image", c_int),
 		("selectedImage", c_int),
-		("children" c_int),
+		("children", c_int),
 		("lParam", LPARAM)
 	]
 
@@ -1352,8 +1352,8 @@ class TVITEMW64(Structure):
 	]
 # Tree view controls are handled differently from other complex controls. They don't use an index, and they provide their own navigation between tree view items
 # Therefor, inheret from Win32, and implement everything manualy
-class TreeView(win32)
-
+class TreeView(Win32):
+	pass
 #* support for unknown controls
 class DisplayChunk(Win32):
 	isComplex = True
