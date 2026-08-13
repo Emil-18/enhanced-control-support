@@ -447,7 +447,25 @@ class Win32(window.Window):
 	@classmethod
 	def _getDefaultConfig(cls):
 		return(dict())
-class ComplexParent(Win32):
+class DisplayTextSetting(Win32):
+	@classmethod
+	def _makeSettings(cls, self, groupSizer, groupBox, helper, conf):
+		#Translators: A label for a check box
+		label = _("Label items by their display text, if possible")
+		self.displayLabel = helper.addItem(wx.CheckBox(groupBox, label = label))
+		if conf and "displayLabel" in conf[3].keys():
+			self.displayLabel.SetValue(conf[3].get("displayLabel"))
+		else:
+			self.displayLabel.SetValue(True)
+	@classmethod
+	def _onSave(cls, self, groupSizer, groupBox, groupHelper):
+		d = {"displayLabel": self.displayLabel.GetValue()}
+		return(d)
+	@classmethod
+	def _getDefaultConfig(cls):
+		d = {"displayLabel": True}
+		return(d)
+class ComplexParent(DisplayTextSetting):
 	shouldLookAtClassName = False
 	def isValid(self, index):
 		childCount = self.childCount
@@ -513,13 +531,7 @@ class ComplexParent(Win32):
 		return(obj)
 	@classmethod
 	def _makeSettings(cls, self, groupSizer, groupBox, helper, conf):
-		#Translators: A label for a check box
-		label = _("Label items by their display text, if possible")
-		self.displayLabel = helper.addItem(wx.CheckBox(groupBox, label = label))
-		if conf and "displayLabel" in conf[3].keys():
-			self.displayLabel.SetValue(conf[3].get("displayLabel"))
-		else:
-			self.displayLabel.SetValue(True)
+		super(ComplexParent, cls)._makeSettings(self, groupSizer, groupBox, helper, conf)
 		# Translators: a label for a check box
 		label = _("When unable to count underlying objects, (such as tabs in a tab control), try to fetch an objects name and location to see if it is a valid object.\nThis could Theoretically make NVDA work in more situations, but it might crash the application NVDA is interacting with.\nAs of now, this hasn't been known to provide more access in any real world situation")
 		self.guessIfUnavailable = helper.addItem(wx.CheckBox(groupBox, label = label))
@@ -529,11 +541,13 @@ class ComplexParent(Win32):
 			self.guessIfUnavailable.SetValue(False)
 	@classmethod
 	def _onSave(cls, self, groupSizer, groupBox, groupHelper):
-		d = {"displayLabel": self.displayLabel.GetValue(), "guessIfUnavailable": self.guessIfUnavailable.GetValue()}
+		d = super(ComplexParent, cls)._onSave(self, groupSizer, groupBox, groupHelper)
+		d.update({"guessIfUnavailable": self.guessIfUnavailable.GetValue()})
 		return(d)
 	@classmethod
 	def _getDefaultConfig(cls):
-		d = {"displayLabel": True, "guessIfUnavailable": False}
+		d = super(ComplexParent, cls)._getDefaultConfig()
+		d.update({"guessIfUnavailable": False})
 		return(d)
 class Complex(Win32):
 	def _get_name(self):
@@ -987,7 +1001,26 @@ class ListView(ComplexParent):
 	@staticmethod
 	def isSupported(windowHandle):
 		return(bool(user32.SendMessageW(windowHandle, LVM_GETITEMCOUNT, 0, 0)))
-
+	@classmethod
+	def _makeSettings(cls, self, groupSizer, groupBox, groupHelper, conf):
+		super(ListView, cls)._makeSettings(self, groupSizer, groupBox, groupHelper, conf)
+		# Translators: A label for a check box
+		label = _("Expose list view columns as individual objects, useful if the application does different things based on wich column you click with the mouse")
+		self.exposeColumns = groupHelper.addItem(wx.CheckBox(groupBox, label = label))
+		if conf and "exposeColumns" in conf[3].keys():
+			self.exposeColumns.SetValue(conf[3].get("exposeColumns"))
+		else:
+			self.exposeColumns.SetValue(False)
+	@classmethod
+	def _onSave(cls, self, *args, **kwargs):
+		d = super(ListView, cls)._onSave(self, *args, **kwargs)
+		d.update({"exposeColumns": self.exposeColumns.GetValue()})
+		return(d)
+	@classmethod
+	def _getDefaultConfig(cls):
+		d = super(ListView, cls)._getDefaultConfig()
+		d.update({"exposeColumns": False})
+		return(d)
 class ListViewItem(Complex):
 	baseRole = controlTypes.Role.LISTITEM
 	def _getSubItemName(self, subItemIndex):
@@ -1004,7 +1037,7 @@ class ListViewItem(Complex):
 		return(buffer.value)
 	def _get_win32Name(self):
 		nameList = []
-		for i in range(0, self.childCount):
+		for i in range(0, self._realChildCount):
 			nameList.append(self._getSubItemName(i))
 		return("  ".join(nameList))
 	def _get_location(self):
@@ -1013,6 +1046,14 @@ class ListViewItem(Complex):
 		rect = clientRectToScreenRect(self.windowHandle, rect)
 		return(locationHelper.RectLTWH.fromCompatibleType(rect))
 	def _get_childCount(self):
+		conf = getConfigFromWindow(self.windowHandle)
+		if not conf:
+			return(0)
+		if not conf[3].get("exposeColumns"):
+			return(0)
+		return(self._realChildCount)
+
+	def _get__realChildCount(self):
 		window = user32.SendMessageW(self.windowHandle, LVM_GETHEADER, 0, 0)
 		if not window:
 			return(0)
@@ -1353,7 +1394,7 @@ class TVITEMW64(Structure):
 # Tree view controls are handled differently from other complex controls. They don't use an index, and they provide their own navigation between tree view items
 # Therefor, inheret from Win32, and implement everything manualy
 class TreeView(Win32):
-	pass
+	shouldLookAtClassName = False
 #* support for unknown controls
 class DisplayChunk(Win32):
 	isComplex = True
