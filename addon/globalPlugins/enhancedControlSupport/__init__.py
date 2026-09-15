@@ -1738,6 +1738,7 @@ supportedClasses = [
 	ListView,
 	Toolbar,
 	DisplayModelEdit,
+	DisplayText
 	Unknown,
 ]
 class SettingsStorer():
