@@ -119,10 +119,8 @@ class EnhancedControlSupportSettingsPanel(gui.SettingsPanel):
 		config.conf["enhancedControlSupport"]["handleErrors"] = self.handleErrors.GetValue()
 #* helper functions
 def shouldUseTimerMixin(conf, obj, clsList):
-
-	for i in clsList:
-		if issubclass(i, Complex) or (issubclass(i, Win32) and not conf):
-			return(True)
+	if isinstance(obj, Win32) and obj.isComplex:
+		return(True)
 	if conf and not conf[1]:
 		return(True)
 	if not config.conf["enhancedControlSupport"]["trustEvents"]:
@@ -438,6 +436,11 @@ class Win32(window.Window):
 		focus = api.getFocusObject()
 		if focus.windowHandle != self.windowHandle:
 			user32.SetForegroundWindow(self.windowHandle)
+	# functions overwritten by the accessibillity API, but works when we use WindowGuard and NVDAObjectGuard
+	def _get_children(self):
+		return(NVDAObject._get_children(self))
+	def _getChild(self, child):
+		return(NVDAObject._getChild(self, child))
 	@classmethod
 	def _makeSettings(cls, self, groupSizer, groupBox, groupHelper, conf):
 		pass
@@ -549,7 +552,7 @@ class ComplexParent(DisplayTextSetting):
 		d = super(ComplexParent, cls)._getDefaultConfig()
 		d.update({"guessIfUnavailable": False})
 		return(d)
-class Complex(Win32):
+class ComplexItemBase(Win32):
 	def _get_name(self):
 		# I don't know how to handle none unicode windows, so rely on display text for them if possible
 		# I choose to prioritise win32Name here, as it genererly is more reliable than displayText.
@@ -565,6 +568,7 @@ class Complex(Win32):
 			return(displayText)
 		return(win32)
 	shouldLookAtClassName = False
+class Complex(ComplexItemBase):
 	def _isEqual(self, other):
 		eq = self.index == other.index and self.windowHandle == other.windowHandle
 		return(eq)
@@ -1233,7 +1237,7 @@ class ListBoxItem(Complex):
 			return("")
 		size = textLength*sizeof(c_wchar)+1
 		buffer = create_unicode_buffer(size)
-		sendMessageInProcess(self.windowHandle, LB_GETTEXT, self.index, buffer, buffer, size)
+		sendMessageInProcess(self.windowHandle, LB_GETTEXT, self.index, buffer, buffer, size, shouldTryWithLocalMemoryAddress = True)
 		return(buffer.value)
 	def _get_states(self):
 		states = super(ListBoxItem, self).states
@@ -1243,7 +1247,7 @@ class ListBoxItem(Complex):
 		return(states)
 	def _get_location(self):
 		rect = RECT()
-		res = sendMessageInProcess(self.windowHandle, LB_GETITEMRECT, self.index, addressof(rect), addressof(rect), sizeof(rect))
+		res = sendMessageInProcess(self.windowHandle, LB_GETITEMRECT, self.index, addressof(rect), addressof(rect), sizeof(rect), shouldTryWithLocalMemoryAddress = True)
 		if not (rect.left or rect.top or rect.right or rect.bottom):
 			return
 		rect = clientRectToScreenRect(self.windowHandle, rect)
@@ -1356,6 +1360,12 @@ TVM_GETITEMW = TV_FIRST+62
 TVM_GETITEMRECT = TV_FIRST+4
 TVM_GETITEMSTATE = TV_FIRST+39
 TVM_GETNEXTITEM = TV_FIRST+10
+TVM_HITTEST = TV_FIRST+17
+TVIF_TEXT = 0x00001
+TVIF_HANDLE = 0x0010
+#** tree view state constants
+TVIS_EXPANDED = 0x0020
+TVIS_SELECTED = 0x0002
 #** treeview Navigation constants
 TVGN_CARET = 0x0009
 TVGN_CHILD = 0x0004
@@ -1391,10 +1401,124 @@ class TVITEMW64(Structure):
 		("children", c_int),
 		("lParam", LPARAM)
 	]
+
+class TVHITTESTINFO32(Structure):
+	_fields_ = [
+		("pt", POINT),
+		("flags", c_uint),
+		("treeViewItemHandle", c_uint)
+	]
+
+class TVHITTESTINFO64(Structure):
+	_fields_ = [
+		("pt", POINT),
+		("flags", c_uint),
+		("treeViewItemHandle", c_uint64)
+	]
+
+#** Treeview helper functions
+def treeViewNavigate(obj, navigationConstant):
+	# explisitly use watchdog.cancellableSendMessage here, as the value returned can be larger than 4000000000
+	newHandle = cancellableSendMessage(obj.windowHandle, TVM_GETNEXTITEM, navigationConstant, obj.treeViewItemHandle if isinstance(obj, TreeViewItem) else 0)
+	if not newHandle:
+		return(None)
+	newObj = TreeViewItem(windowHandle = obj.windowHandle, root = obj if isinstance(obj, TreeView) else obj.root, treeViewItemHandle = newHandle)
+	return(newObj)
+
 # Tree view controls are handled differently from other complex controls. They don't use an index, and they provide their own navigation between tree view items
-# Therefor, inheret from Win32, and implement everything manualy
-class TreeView(Win32):
+# Therefor, inheret from DisplayTextSetting, and implement everything manualy
+class TreeView(DisplayTextSetting):
 	shouldLookAtClassName = False
+	isComplex = True
+	baseRole = controlTypes.Role.TREEVIEW
+	def _get_name(self):
+		return(self.win32Name)
+	def _get_focusRedirect(self):
+		newObj = treeViewNavigate(self, TVGN_CARET)
+		return(newObj)
+	def _get_firstChild(self):
+		return treeViewNavigate(self, TVGN_CHILD)
+	def _get_lastChild(self):
+		child = None
+		try:
+			child = self.children[-1]
+		except:
+			pass
+		return(child)
+	def objectFromPointRedirect(self, x, y):
+		point = POINT(x, y)
+		user32.ScreenToClient(self.windowHandle, addressof(point))
+		if self.appModule.is64BitProcess:
+			hittestInfo = TVHITTESTINFO64(point)
+		else:
+			hittestInfo = TVHITTESTINFO32(point)
+		res = sendMessageInProcess(self.windowHandle, TVM_HITTEST, 0, addressof(hittestInfo), addressof(hittestInfo), sizeof(hittestInfo))
+		value = hittestInfo.treeViewItemHandle or res
+		if not value:
+			return
+		return(TreeViewItem(windowHandle = self.windowHandle, root = self, treeViewItemHandle = value))
+class TreeViewItem(ComplexItemBase):
+	isComplex = True
+	baseRole = controlTypes.Role.TREEVIEWITEM
+	def __init__(self, windowHandle = None, root = None, treeViewItemHandle = None):
+		super(TreeViewItem, self).__init__(windowHandle = windowHandle)
+		self.root = root
+		self.treeViewItemHandle = treeViewItemHandle
+	def _isEqual(self, other):
+		eq = self.treeViewItemHandle == other.treeViewItemHandle and self.windowHandle == other.windowHandle
+		return(eq)
+	def _get_win32Name(self):
+		maxTextLen = 255*sizeof(c_wchar)
+		buffer = create_unicode_buffer(maxTextLen)
+		internalBuffer = kernel32.VirtualAllocEx(self.processHandle, 0, maxTextLen, winKernel.MEM_COMMIT, winKernel.PAGE_READWRITE)
+		if self.appModule.is64BitProcess:
+			treeInfo = TVITEMW64(TVIF_TEXT+TVIF_HANDLE, self.treeViewItemHandle, 0, 0, internalBuffer, maxTextLen, 0, 0)
+		else:
+			treeInfo = TVITEMW32(TVIF_TEXT+TVIF_HANDLE, self.treeViewItemHandle, 0, 0, internalBuffer, maxTextLen, 0, 0)
+		sendMessageInProcess(self.windowHandle, TVM_GETITEMW, self.treeViewItemHandle, addressof(treeInfo), addressof(treeInfo), sizeof(treeInfo), pointerToCheck = buffer, internalPointerToCheck = internalBuffer)
+		kernel32.ReadProcessMemory(self.processHandle, internalBuffer, buffer, 255*sizeof(c_wchar), 0)
+		kernel32.VirtualFreeEx(self.processHandle, internalBuffer, 0, winKernel.MEM_RELEASE)
+		return(buffer.value)
+	def _get_next(self):
+		return(treeViewNavigate(self, TVGN_NEXT))
+	def _get_previous(self):
+		return(treeViewNavigate(self, TVGN_PREVIOUS))
+	def _get_firstChild(self):
+		return(treeViewNavigate(self, TVGN_CHILD))
+	def _get_lastChild(self):
+		child = None
+		try:
+			child = self.children[-1]
+		except:
+			pass
+		return(child)
+	def _get_parent(self):
+		obj = treeViewNavigate(self, TVGN_PARENT)
+		if not obj:
+			obj = self.root
+		return(obj)
+	def _get_location(self):
+		handle = c_ulonglong(self.treeViewItemHandle)
+		rect = RECT.from_address(addressof(handle))
+		res = sendMessageInProcess(self.windowHandle, TVM_GETITEMRECT, 0, addressof(rect), addressof(rect), sizeof(rect))
+		if not res:
+			return(locationHelper.RectLTWH(0, 0, 0, 0))
+		rect = clientRectToScreenRect(self.windowHandle, rect)
+		screenRect = locationHelper.RectLTWH.fromCompatibleType(rect)
+		return(screenRect)
+	def _get_states(self):
+		
+		states = super(TreeViewItem, self).states
+		states.add(controlTypes.State.SELECTABLE)
+		expanded = user32.SendMessageW(self.windowHandle, TVM_GETITEMSTATE, self.treeViewItemHandle, TVIS_EXPANDED)
+		selected = user32.SendMessageW(self.windowHandle, TVM_GETITEMSTATE, self.treeViewItemHandle, TVIS_SELECTED)
+		if expanded & TVIS_EXPANDED:
+			states.add(controlTypes.State.EXPANDED)
+		else:
+			states.add(controlTypes.State.COLLAPSED)
+		if selected & TVIS_SELECTED:
+			states.add(controlTypes.State.SELECTED)
+		return(states)
 #* support for unknown controls
 class DisplayChunk(Win32):
 	isComplex = True
@@ -1563,6 +1687,7 @@ supportedClasses = [
 	CheckBox,
 	ComboBox,
 	RadioButton,
+	TreeView,
 	Text,
 	Tab,
 	ListBox,
