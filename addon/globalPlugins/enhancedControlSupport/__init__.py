@@ -1710,6 +1710,17 @@ class DynamicSelectionTextInfo(displayModel.DisplayModelTextInfo):
 		return(self._getColor())
 	def _get_backgroundSelectionColor(self):
 		return(self._getColor(background = True))
+#** Display text support
+
+class DisplayText(Win32):
+	shouldLookAtClassName = False
+	# Translators: the display name for the display text option
+	displayName = _("display text")
+	baseRole = controlTypes.Role.STATICTEXT
+	def _get_value(self)
+		return(self.displayText)
+	def _get_TextInfo(self):
+		return(displayModel.DisplayModelTextInfo)
 cfg = {}
 supportedControls = []
 classNamesToNVDAControlTypeNames = {}
