@@ -55,13 +55,18 @@ oldFocus = None
 canTrustFocusEvents = True
 callLater = wx.CallLater(500, eventHandler.queueEvent)
 callLater.Stop()
+#** Tuple for the unknown and DisplayChunk classes, with a collection of roles
 roles = (
 	("list", controlTypes.Role.LIST, controlTypes.Role.LISTITEM),
 	("grid", controlTypes.Role.DATAGRID, controlTypes.Role.DATAITEM),
 	("statusbar", controlTypes.Role.STATUSBAR, controlTypes.Role.STATICTEXT),
 	("tab", controlTypes.Role.TABCONTROL, controlTypes.Role.TAB),
-	("tree", controlTypes.Role.TREEVIEW, controlTypes.Role.TREEVIEWITEM)
-	
+	("tree", controlTypes.Role.TREEVIEW, controlTypes.Role.TREEVIEWITEM),
+	("toolbar", controlTypes.Role.TOOLBAR, controlTypes.Role.BUTTON),
+	("dialog", controlTypes.Role.DIALOG, controlTypes.Role.STATICTEXT),
+	("table", controlTypes.Role.TABLE, controlTypes.Role.TABLECELL),
+	("frame", controlTypes.Role.FRAME, controlTypes.Role.STATICTEXT),
+	("text", controlTypes.Role.STATICTEXT, controlTypes.Role.STATICTEXT)
 )
 #* needed dlls
 user32 = WinDLL("user32")
@@ -369,6 +374,34 @@ class ErrorHandler2():
 				raise Ex
 		return(attribute)
 			
+
+# a class used to enumerate through all windows in an application
+class WindowEnumerator(window.Window):
+	def _get_next(self):
+		obj = window.Window._get_next(self)
+		if not obj:
+			return
+		obj = WindowEnumerator(windowHandle = obj.windowHandle)
+		return(obj)
+	def _get_previous(self):
+		obj = window.Window._get_previous(self)
+		if not obj:
+			return
+		obj = WindowEnumerator(windowHandle = obj.windowHandle)
+		return(obj)
+	def _get_firstChild(self):
+		obj = window.Window._get_firstChild(self)
+		if not obj:
+			return
+		obj = WindowEnumerator(windowHandle = obj.windowHandle)
+		return(obj)
+	def _get_lastChild(self):
+		obj = window.Window._get_lastChild(self)
+		if not obj:
+			return
+		obj = WindowEnumerator(windowHandle = obj.windowHandle)
+		return(obj)
+	
 class Win32(window.Window):
 	'''
 	Support for win32 controls that don't support IAccessible
@@ -1843,6 +1876,8 @@ class ControlDialog(SettingsDialog):
 		cfg.update({self.key: conf})
 		return(super(ControlDialog, self).onOk(*args, **kwargs))
 class GlobalPlugin(globalPluginHandler.GlobalPlugin):
+	# Translators: A category in the input gestures dialog
+	category = _("Enhanced object navigation")
 	def __init__(self):
 		super(GlobalPlugin, self).__init__()
 		UIAHandler.UIAHandler.isUIAWindow = newIsUIAWindow
@@ -2019,3 +2054,20 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			ui.message(message)
 			return
 		ui.message(cls.baseRole.displayString if not cls.displayName else cls.displayName)
+	@script(
+		gesture = "kb:NVDA+escape",
+		# Translators: The description for a script
+		description = _("Redraws the entire foreground window, useful if NVDA reports text that isn't there, or doesn't report text visible on the screen. This may not always fix these kinds of issues")
+	)
+	def script_redrawScreen(self, gesture):
+		# This script is slow enough so that if it is executed a bunch of times very quickly, it can cause NVDA to hang
+		if getLastScriptRepeatCount():
+			return
+		obj = WindowEnumerator(windowHandle = api.getForegroundObject().windowHandle)
+		# redraw obj first, not last, as redrawing the foreground window may result in display text for underlying windows disappearing
+		obj.redraw()
+		for i in obj.recursiveDescendants:
+			i.redraw()
+		# Translators: A message reported when the screen is refreshed
+		message = _("Screen refreshed")
+		ui.message(message)
