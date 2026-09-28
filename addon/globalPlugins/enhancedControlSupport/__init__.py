@@ -1717,7 +1717,7 @@ class DisplayText(Win32):
 	# Translators: the display name for the display text option
 	displayName = _("display text")
 	baseRole = controlTypes.Role.STATICTEXT
-	def _get_value(self)
+	def _get_value(self):
 		return(self.displayText)
 	def _get_TextInfo(self):
 		return(displayModel.DisplayModelTextInfo)
@@ -1738,7 +1738,7 @@ supportedClasses = [
 	ListView,
 	Toolbar,
 	DisplayModelEdit,
-	DisplayText
+	DisplayText,
 	Unknown,
 ]
 class SettingsStorer():
