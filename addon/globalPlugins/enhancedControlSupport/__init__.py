@@ -710,7 +710,11 @@ def focusTimerFunc(self):
 	global oldFocus
 	focus = api.getFocusObject()
 	realFocus = objectWithFocus()
-	
+	if not realFocus:
+		# Nothing reports focus (for example while a window is being torn down).
+		# Try again on the next tick instead of raising every 50 ms.
+		return
+
 	oldFocus = realFocus
 	t = 500 if canTrustFocusEvents else 0
 	realFocus.trustFocusEvents = False
