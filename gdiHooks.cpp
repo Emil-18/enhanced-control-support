@@ -38,7 +38,9 @@ typedef HRESULT(WINAPI* DrawThemeBackground_funcType)(HTHEME, HDC, int, int, LPC
 HMODULE uxTheme = LoadLibraryA("uxtheme");
 OpenThemeData_funcType openThemeData = (OpenThemeData_funcType)GetProcAddress(uxTheme, "OpenThemeData");
 DrawThemeBackground_funcType drawThemeBackground = (DrawThemeBackground_funcType)GetProcAddress(uxTheme, "DrawThemeBackground");
-
+// The handle of GDI32full.dll. This dll has a copy of many functions in the normal GDI32.dll
+// Although very uncommon, applications may choose to use the functions located here instead of the normal one, so we want to hook these as well
+HMODULE GDI32FullHandle = LoadLibraryA("GDI32Full");
 // A macro to log what hooked function is being called, and what arguments is sent to it.
 // I do it in this way, so we can easily toggle the logging of this information, and so we don't need to get all other debug loggings at the same time
 // When this is enabled, some programs, such as iZoom and notepad ++ will crash at startup. As of now, I don't know why.
@@ -944,7 +946,7 @@ HRESULT WINAPI fake_DrawThemeBackground(HTHEME theme, HDC hdc, int partId, int s
 	
 	//GetCurrentPositionEx( hdc, &point);
 	LOG_INFO(L"Drawing check box at rectangle " << rect->left << ", " << rect->top << ", " << rect->right  << ", " << rect->bottom);
-	ExtTextOutHelper(model, hdc, rect->left, rect->top, NULL, 0, GetTextAlign(hdc), false, L"Test", CP_THREAD_ACP, NULL, 6, 0, 0, L"DrawThemeBackground");
+	ExtTextOutHelper(model, hdc, rect->left, rect->top, NULL, 0, GetTextAlign(hdc), false, L"Fuckf", CP_THREAD_ACP, NULL, 6, 0, 0, L"DrawThemeBackground");
 	
 	model->release();
 	return(res);
@@ -956,7 +958,9 @@ void StretchBlt_helper(HDC hdcDest, int nXDest, int nYDest, int nWidthDest, int 
 	bool destInvertBefore=dwRop==SRCERASE;
 	bool destInvertAfter=(dwRop==DSTINVERT||dwRop==NOTSRCERASE);
 	bool sourceInvert=(dwRop==MERGEPAINT||dwRop==NOTSRCCOPY||dwRop==PATPAINT);
-	bool opaqueSource=(dwRop==MERGECOPY||dwRop==NOTSRCCOPY||dwRop==SRCCOPY);
+	// Do to our version of the display model moves rather than copies rectangles with text, we only want to clear the destination rectangle if MERGECOPY is used.
+	// In Addition, clearing the destination rectangle causes problems when we hook both the normal and the full BitBlt/StretchBlt/... variants, as they sometimes call their counterparts.
+	bool opaqueSource = (dwRop == MERGECOPY);//||dwRop==NOTSRCCOPY||dwRop==SRCCOPY);
 	bool clearDest=(dwRop==BLACKNESS||dwRop==WHITENESS||dwRop==PATCOPY);
 	//If there is no source dc given, the destination dc should be used as the source
 	if(hdcSrc==NULL) hdcSrc=hdcDest;
@@ -993,8 +997,11 @@ void StretchBlt_helper(HDC hdcDest, int nXDest, int nYDest, int nWidthDest, int 
 		// So clear the rect copied from the source model if it differs from the dest model and if the source model is a memory model.
 		// This prevents the scrambeling, but also clears actual text in some situations.
 		HWND srcWindow = WindowFromDC(hdcSrc);
+		// This is the one that most likely will be used in the add-on
 		srcModel->copyRectangle(srcRect, !srcWindow && srcModel != destModel, opaqueSource,sourceInvert,destRect,NULL,destModel);
 		//srcModel->copyRectangle(srcRect, dwRop == SRCERASE || dwRop == NOTSRCERASE, opaqueSource, sourceInvert, destRect, NULL, destModel);
+		// This is the original one used in core
+		//srcModel->copyRectangle(srcRect, FALSE  , opaqueSource, sourceInvert, destRect, NULL, destModel);
 		LOGFUNCTIONINFO(L"After copy, the dest and src models chunk count is " << destModel->getChunkCount() << L" and " << srcModel->getChunkCount());
 		
 		//srcModel->copyRectangle(srcRect, destWindow && destWindow == lastCopiedWindow, opaqueSource,sourceInvert,destRect,NULL,destModel);
@@ -1018,15 +1025,32 @@ void StretchBlt_helper(HDC hdcDest, int nXDest, int nYDest, int nWidthDest, int 
 //Hooked so we can tell when content from one DC is being copied (bit blitted) to another (most likely from a memory DC to a window DC).
 typedef BOOL(WINAPI *BitBlt_funcType)(HDC,int,int,int,int,HDC,int,int,DWORD);
 BitBlt_funcType real_BitBlt=NULL;
-BOOL WINAPI fake_BitBlt(HDC hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, HDC hdcSrc, int nXSrc, int nYSrc, DWORD dwRop) {
+BitBlt_funcType real_BitBlt_full = NULL;
+
+FARPROC BitBlt_full_address = GetProcAddress(GDI32FullHandle, "BitBlt");
+BitBlt_funcType BitBlt_full = (BitBlt_funcType)*BitBlt_full_address;
+
+
+BOOL WINAPI fake_BitBlt(HDC hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, HDC hdcSrc, int nXSrc, int nYSrc, DWORD dwRop, BitBlt_funcType realFunction) {
 	//Call the real BitBlt
-	BOOL res=real_BitBlt(hdcDest,nXDest,nYDest,nWidth,nHeight,hdcSrc,nXSrc,nYSrc,dwRop);
+	BOOL res=realFunction(hdcDest,nXDest,nYDest,nWidth,nHeight,hdcSrc,nXSrc,nYSrc,dwRop);
 	//If bit blit didn't work, or its not a simple copy, we don't want to know about it
 	if(!res) return res;
 	
 	StretchBlt_helper(hdcDest, nXDest, nYDest, nWidth, nHeight, hdcSrc, nXSrc, nYSrc, nWidth, nHeight, dwRop, L"BitBlt");
 	return res;
 }
+
+BOOL WINAPI fake_BitBlt_normal(HDC hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, HDC hdcSrc, int nXSrc, int nYSrc, DWORD dwRop) {
+	return(fake_BitBlt(hdcDest, nXDest, nYDest, nWidth, nHeight, hdcSrc, nXSrc, nYSrc, dwRop, real_BitBlt));
+}
+
+BOOL WINAPI fake_BitBlt_full(HDC hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, HDC hdcSrc, int nXSrc, int nYSrc, DWORD dwRop) {
+	return(fake_BitBlt(hdcDest, nXDest, nYDest, nWidth, nHeight, hdcSrc, nXSrc, nYSrc, dwRop, real_BitBlt_full));
+}
+
+
+
 HMODULE win32U = LoadLibraryA("win32u");
 FARPROC address = GetProcAddress(win32U, "NtUserBitBltSysBmp");
 typedef BOOL(APIENTRY* InternalBitBlt_funcType)(HDC, INT, INT, INT, INT, INT, INT, DWORD);
@@ -1338,6 +1362,10 @@ BOOL WINAPI fake_DestroyWindow(HWND hwnd) {
 }
 
 void gdiHooks_inProcess_initialize() {
+	if (!BitBlt_full_address) {
+		Beep(500, 50);
+	}
+
 	tls_index_textInsertionsCount=TlsAlloc();
 	tls_index_curScriptTextOutScriptAnalysis=TlsAlloc();
 	//Initialize the timer for text change notifications
@@ -1359,7 +1387,8 @@ void gdiHooks_inProcess_initialize() {
 	//apiHook_hookFunction_safe(FillRect, fake_FillRect, &real_FillRect);//logged
 	apiHook_hookFunction_safe(DrawFocusRect, fake_DrawFocusRect, &real_DrawFocusRect);
 	//apiHook_hookFunction_safe(BeginPaint, fake_BeginPaint, &real_BeginPaint);
-	apiHook_hookFunction_safe(BitBlt, fake_BitBlt, &real_BitBlt);//logged
+	apiHook_hookFunction_safe(BitBlt_full, fake_BitBlt_full, &real_BitBlt_full);//logged
+	apiHook_hookFunction_safe(BitBlt, fake_BitBlt_normal, &real_BitBlt);//logged
 	apiHook_hookFunction_safe(InternalBitBlt, fake_InternalBitBlt, &real_InternalBitBlt);//logged
 	apiHook_hookFunction_safe(MaskBlt, fake_MaskBlt, &real_MaskBlt);//logged
 	apiHook_hookFunction_safe(PlgBlt, fake_PlgBlt, &real_PlgBlt);
