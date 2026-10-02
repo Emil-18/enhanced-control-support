@@ -131,6 +131,7 @@ def shouldUseTimerMixin(conf, obj, clsList):
 	if not config.conf["enhancedControlSupport"]["trustEvents"]:
 		return(True)
 	return(False)
+
 def objectWithFocus():
 	realFocus = NVDAObject.objectWithFocus()
 	if not realFocus:
@@ -182,7 +183,7 @@ def sendMessageInProcess(hwnd, msg, wParam, lParam, localBuffer, size, shouldTry
 			kernel32.ReadProcessMemory(processHandle, internalPointerToCheck, localBuffer2, size, 0)
 			if shouldTryWithLocalMemoryAddress and not msvcrt.memcmp(pointerToCheck, localBuffer2, size):
 				failed = True
-				res = cancellableSendMessage(hwnd, msg,wParam, lParam)
+				res = cancellableSendMessage(hwnd, msg, wParam, lParam)
 		finally:
 			msvcrt.free(localBuffer2)
 
@@ -259,7 +260,7 @@ def newIsUIAWindow(self, windowHandle, *args, **kwargs):
 #** General messages
 WM_USER = 1024
 #** General structures
-# SHORTPOINT allows us to get and send clean, sencible information from/to functions that expect an intiger that contains its information in its lowword and highword
+# SHORTPOINT allows us to get and send clean, sencible information from/to functions that expect an integer that contains information in its lowword and highword
 class SHORTPOINT(Structure):
 	_fields_ = [
 		("x", c_short),
@@ -269,10 +270,10 @@ class SHORTPOINT(Structure):
 #* General classes
 
 # We nead to make sure properties from the accessibillity APIs don't interfer with Win32 controls when the user has explisitly decided to overwrite a control
-# If we don't do this, the user could get an inconsistant experience, e.g, if they overwrite a working tab control that reports wrong position information, and then moves the focus to it
+# If we don't do this, the user could get an inconsistant experience, e.g, if they overwrite a working tab control that reports wrong position information, and then moves the focus to it, they could get output such as
 # tab control 1 of 8, tab 1 of 4
 # We can't simply remove the API class from the objects class structure, as it causes focus events to fail, and what if other code expect properties only defined on the API class to be there?
-# as all builtin API classes inheret from Window and NVDAObject, the API class has to be placed after them
+# as all builtin API classes inheret from Window and NVDAObject, the API class has to be placed after them, but idealy, we would want to place it before
 # so copy the content of both Window and NVDAObject into new classes
 WindowGuard = type("WindowGuard", (NVDAObject,), {})
 NVDAObjectGuard = type("NVDAObjectGuard", (NVDAObject,), {})
@@ -338,7 +339,7 @@ class ErrorHandler(NVDAObject):
 	def _get_children(self):
 		return(self._getPropertyAndHandleError("children", []))
 	def _get_positionInfo(self):
-		return(self._getPropertyAndHandleError("positionInfo", {}))
+		return(self._getPropertyAndHandleError("positionInfo", dict()))
 
 class ErrorRedirect(NVDAObject):
 	processID = 0
@@ -587,15 +588,10 @@ class ComplexParent(DisplayTextSetting):
 		return(d)
 class ComplexItemBase(Win32):
 	def _get_name(self):
-		# I don't know how to handle none unicode windows, so rely on display text for them if possible
-		# I choose to prioritise win32Name here, as it genererly is more reliable than displayText.
-		# In addition, the user always has access to the display text via screen review or the Unknown class
 		conf = getConfigFromWindow(self.windowHandle)
 		displayText = self.displayText or self.win32Name
 		win32 = self.win32Name or self.displayText
 		if not conf:
-			return(displayText)
-		if not self.isWindowUnicode:
 			return(displayText)
 		if conf[3].get("displayLabel"):
 			return(displayText)
@@ -625,6 +621,8 @@ class Complex(ComplexItemBase):
 	def _get_previous(self):
 		index = self.index
 		if index <= 0:
+			return
+		if not self.parent.isValid(index-1):
 			return
 		return(self.parent.subClass(windowHandle = self.windowHandle, parent = self.parent, index = index-1))
 	def _get_positionInfo(self):
@@ -686,8 +684,6 @@ class TimerMixin(NVDAObject):
 	def event_stateChange(self):
 		self.staticStates = self.states
 		super(TimerMixin, self).event_stateChange()
-
-
 
 
 def timerFunc(self):
@@ -858,7 +854,7 @@ class DisplayModelEdit(Edit):
 	@classmethod
 	def _makeSettings(cls, self, groupSizer, groupBox, groupHelper, conf):
 		# Translators: a label for a check box
-		label = _("Redraw the control on caret movement, useful if the content doesn't seam to update when typing or deleting text")
+		label = _("Redraw the control on caret movement, useful if no text normally is shown, or the content doesn't seam to update when typing or deleting text")
 		self.redrawOnCaretMove = groupHelper.addItem(wx.CheckBox(groupBox, label = label))
 		
 		self.redrawOnCaretMove.SetValue(conf[3].get("redrawOnCaretMove") if conf and conf[3].get("redrawOnCaretMove")else False)
@@ -1717,8 +1713,8 @@ class DisplayText(Win32):
 	# Translators: the display name for the display text option
 	displayName = _("display text")
 	baseRole = controlTypes.Role.STATICTEXT
-	def _get_value(self)
-		return(self.displayText)
+	def _get_value(self):
+		return(self.displayText if self.displayText != self.name else "")
 	def _get_TextInfo(self):
 		return(displayModel.DisplayModelTextInfo)
 cfg = {}
@@ -1738,7 +1734,7 @@ supportedClasses = [
 	ListView,
 	Toolbar,
 	DisplayModelEdit,
-	DisplayText
+	DisplayText,
 	Unknown,
 ]
 class SettingsStorer():
