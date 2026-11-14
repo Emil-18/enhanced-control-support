@@ -1025,10 +1025,8 @@ void StretchBlt_helper(HDC hdcDest, int nXDest, int nYDest, int nWidthDest, int 
 //Hooked so we can tell when content from one DC is being copied (bit blitted) to another (most likely from a memory DC to a window DC).
 typedef BOOL(WINAPI *BitBlt_funcType)(HDC,int,int,int,int,HDC,int,int,DWORD);
 BitBlt_funcType real_BitBlt=NULL;
-BitBlt_funcType real_BitBlt_full = NULL;
 
-FARPROC BitBlt_full_address = GetProcAddress(GDI32FullHandle, "BitBlt");
-BitBlt_funcType BitBlt_full = (BitBlt_funcType)*BitBlt_full_address;
+
 
 
 BOOL WINAPI fake_BitBlt(HDC hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, HDC hdcSrc, int nXSrc, int nYSrc, DWORD dwRop, BitBlt_funcType realFunction) {
@@ -1039,14 +1037,6 @@ BOOL WINAPI fake_BitBlt(HDC hdcDest, int nXDest, int nYDest, int nWidth, int nHe
 	
 	StretchBlt_helper(hdcDest, nXDest, nYDest, nWidth, nHeight, hdcSrc, nXSrc, nYSrc, nWidth, nHeight, dwRop, L"BitBlt");
 	return res;
-}
-
-BOOL WINAPI fake_BitBlt_normal(HDC hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, HDC hdcSrc, int nXSrc, int nYSrc, DWORD dwRop) {
-	return(fake_BitBlt(hdcDest, nXDest, nYDest, nWidth, nHeight, hdcSrc, nXSrc, nYSrc, dwRop, real_BitBlt));
-}
-
-BOOL WINAPI fake_BitBlt_full(HDC hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, HDC hdcSrc, int nXSrc, int nYSrc, DWORD dwRop) {
-	return(fake_BitBlt(hdcDest, nXDest, nYDest, nWidth, nHeight, hdcSrc, nXSrc, nYSrc, dwRop, real_BitBlt_full));
 }
 
 
@@ -1065,7 +1055,7 @@ BOOL APIENTRY fake_InternalBitBlt(HDC hdc, INT x, INT y, INT width, INT height, 
 }
 typedef BOOL(WINAPI* MaskBlt_funcType)(HDC, int, int, int, int, HDC, int, int, HBITMAP, int, int, DWORD);
 MaskBlt_funcType real_MaskBlt = NULL;
-BOOL WINAPI fake_MaskBlt(HDC hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, HDC hdcSrc, int nXSrc, int nYSrc, HBITMAP bitmap, int xMask, int yMask, DWORD dwRop) {
+BOOL WINAPI fake_MaskBlt(HDC hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, HDC hdcSrc, int nXSrc, int nYSrc, HBITMAP bitmap, int xMask, int yMask, DWORD dwRop, MaskBlt_funcType real_MaskBlt) {
 	//Call the real BitBlt
 	BOOL res = real_MaskBlt(hdcDest, nXDest, nYDest, nWidth, nHeight, hdcSrc, nXSrc, nYSrc, bitmap, xMask, yMask, dwRop);
 	//If bit blit didn't work, or its not a simple copy, we don't want to know about it
@@ -1078,9 +1068,9 @@ BOOL WINAPI fake_MaskBlt(HDC hdcDest, int nXDest, int nYDest, int nWidth, int nH
 
 typedef BOOL(WINAPI* PlgBlt_funcType)(HDC, const POINT*, HDC, int, int, int, int, HBITMAP, int, int);
 PlgBlt_funcType real_PlgBlt = NULL;
-BOOL WINAPI fake_PlgBlt(HDC hdcDest, const POINT* points, HDC hdcSrc, int srcX, int srcY, int srcWidth, int srcHeight, HBITMAP bitmap, int maskX, int maskY) {
+BOOL WINAPI fake_PlgBlt(HDC hdcDest, const POINT* points, HDC hdcSrc, int srcX, int srcY, int srcWidth, int srcHeight, HBITMAP bitmap, int maskX, int maskY, PlgBlt_funcType realFunction) {
 	//Beep(500, 50);
-	BOOL res = real_PlgBlt(hdcDest, points, hdcSrc, srcX, srcY, srcWidth, srcHeight, bitmap, maskX, maskY);
+	BOOL res = realFunction(hdcDest, points, hdcSrc, srcX, srcY, srcWidth, srcHeight, bitmap, maskX, maskY);
 	if (!res) return(res);
 	//Beep(500, 50);
 	int xDest = points[0].x;
@@ -1092,7 +1082,7 @@ BOOL WINAPI fake_PlgBlt(HDC hdcDest, const POINT* points, HDC hdcSrc, int srcX, 
 }
 typedef BOOL(WINAPI* GdiAlphaBlend_funcType)(HDC, int, int, int, int, HDC, int, int, int, int, BLENDFUNCTION);
 GdiAlphaBlend_funcType real_GdiAlphaBlend = NULL;
-BOOL WINAPI fake_GdiAlphaBlend(HDC hdcDest, int nXDest, int nYDest, int nWidthDest, int nHeightDest, HDC hdcSrc, int nXSrc, int nYSrc, int nWidthSrc, int nHeightSrc, BLENDFUNCTION crTransparent) {
+BOOL WINAPI fake_GdiAlphaBlend(HDC hdcDest, int nXDest, int nYDest, int nWidthDest, int nHeightDest, HDC hdcSrc, int nXSrc, int nYSrc, int nWidthSrc, int nHeightSrc, BLENDFUNCTION crTransparent, GdiAlphaBlend_funcType real_AlphaBlend) {
 	//Call the real StretchBlt
 	BOOL res = real_GdiAlphaBlend(hdcDest, nXDest, nYDest, nWidthDest, nHeightDest, hdcSrc, nXSrc, nYSrc, nWidthSrc, nHeightSrc, crTransparent);
 	if (!res) return res;
@@ -1104,7 +1094,7 @@ BOOL WINAPI fake_GdiAlphaBlend(HDC hdcDest, int nXDest, int nYDest, int nWidthDe
 //StretchBlt hook function
 typedef BOOL(WINAPI *StretchBlt_funcType)(HDC,int,int,int,int,HDC,int,int,int,int,DWORD);
 StretchBlt_funcType real_StretchBlt=NULL;
-BOOL WINAPI fake_StretchBlt(HDC hdcDest, int nXDest, int nYDest, int nWidthDest, int nHeightDest, HDC hdcSrc, int nXSrc, int nYSrc, int nWidthSrc, int nHeightSrc, DWORD dwRop) {
+BOOL WINAPI fake_StretchBlt(HDC hdcDest, int nXDest, int nYDest, int nWidthDest, int nHeightDest, HDC hdcSrc, int nXSrc, int nYSrc, int nWidthSrc, int nHeightSrc, DWORD dwRop, StretchBlt_funcType real_StretchBlt) {
 	//Call the real StretchBlt
 	BOOL res=real_StretchBlt(hdcDest,nXDest,nYDest,nWidthDest,nHeightDest,hdcSrc,nXSrc,nYSrc,nWidthSrc,nHeightSrc,dwRop);
 	if(!res) return res;
@@ -1122,13 +1112,102 @@ BOOL WINAPI fake_StretchBlt(HDC hdcDest, int nXDest, int nYDest, int nWidthDest,
 //GdiTransparentBlt hook function
 typedef BOOL(WINAPI *GdiTransparentBlt_funcType)(HDC,int,int,int,int,HDC,int,int,int,int,UINT);
 GdiTransparentBlt_funcType real_GdiTransparentBlt=NULL;
-BOOL WINAPI fake_GdiTransparentBlt(HDC hdcDest, int nXDest, int nYDest, int nWidthDest, int nHeightDest, HDC hdcSrc, int nXSrc, int nYSrc, int nWidthSrc, int nHeightSrc, UINT crTransparent) {
+BOOL WINAPI fake_GdiTransparentBlt(HDC hdcDest, int nXDest, int nYDest, int nWidthDest, int nHeightDest, HDC hdcSrc, int nXSrc, int nYSrc, int nWidthSrc, int nHeightSrc, UINT crTransparent, GdiTransparentBlt_funcType realFunction) {
 	//Call the real StretchBlt
-	BOOL res=real_GdiTransparentBlt(hdcDest,nXDest,nYDest,nWidthDest,nHeightDest,hdcSrc,nXSrc,nYSrc,nWidthSrc,nHeightSrc,crTransparent);
+	BOOL res= realFunction(hdcDest,nXDest,nYDest,nWidthDest,nHeightDest,hdcSrc,nXSrc,nYSrc,nWidthSrc,nHeightSrc,crTransparent);
 	if(!res) return res;
 	StretchBlt_helper(hdcDest, nXDest, nYDest, nWidthDest, nHeightDest, hdcSrc, nXSrc, nYSrc, nWidthSrc, nHeightSrc, SRCPAINT, L"GdiTransparentBlt");
 	return res;
 }
+// GDI32full.dll function hooks.
+BitBlt_funcType real_BitBlt_full = NULL;
+FARPROC BitBlt_full_address = GetProcAddress(GDI32FullHandle, "BitBlt");
+BitBlt_funcType BitBlt_full = (BitBlt_funcType)BitBlt_full_address;
+
+
+BOOL WINAPI fake_BitBlt_normal(HDC hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, HDC hdcSrc, int nXSrc, int nYSrc, DWORD dwRop) {
+	return(fake_BitBlt(hdcDest, nXDest, nYDest, nWidth, nHeight, hdcSrc, nXSrc, nYSrc, dwRop, real_BitBlt));
+}
+
+BOOL WINAPI fake_BitBlt_full(HDC hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, HDC hdcSrc, int nXSrc, int nYSrc, DWORD dwRop) {
+	//Beep(500, 50);
+	return(fake_BitBlt(hdcDest, nXDest, nYDest, nWidth, nHeight, hdcSrc, nXSrc, nYSrc, dwRop, real_BitBlt_full));
+}
+// Next full function
+
+StretchBlt_funcType real_StretchBlt_full = NULL;
+FARPROC StretchBlt_full_address = GetProcAddress(GDI32FullHandle, "StretchBlt");
+StretchBlt_funcType StretchBlt_full = (StretchBlt_funcType)StretchBlt_full_address;
+
+
+BOOL WINAPI fake_StretchBlt_normal(HDC hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, HDC hdcSrc, int nXSrc, int nYSrc, int nWidthSrc, int nHeightSrc, DWORD dwRop) {
+	return(fake_StretchBlt(hdcDest, nXDest, nYDest, nWidth, nHeight, hdcSrc, nXSrc, nYSrc, nWidthSrc,  nHeightSrc, dwRop, real_StretchBlt));
+}
+
+BOOL WINAPI fake_StretchBlt_full(HDC hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, HDC hdcSrc, int nXSrc, int nYSrc, int nWidthSrc, int nHeightSrc, DWORD dwRop) {
+	return(fake_StretchBlt(hdcDest, nXDest, nYDest, nWidth, nHeight, hdcSrc, nXSrc, nYSrc, nWidthSrc, nHeightSrc, dwRop, real_StretchBlt_full));
+}
+
+
+// Next full function
+MaskBlt_funcType real_MaskBlt_full = NULL;
+FARPROC MaskBlt_full_address = GetProcAddress(GDI32FullHandle, "MaskBlt");
+MaskBlt_funcType MaskBlt_full = (MaskBlt_funcType)MaskBlt_full_address;
+
+BOOL WINAPI fake_MaskBlt_normal(HDC hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, HDC hdcSrc, int nXSrc, int nYSrc, HBITMAP image, int maskX, int maskY, DWORD dwRop) {
+	return(fake_MaskBlt(hdcDest, nXDest, nYDest, nWidth, nHeight, hdcSrc, nXSrc, nYSrc, image, maskX, maskY, dwRop, real_MaskBlt));
+}
+
+
+
+BOOL WINAPI fake_MaskBlt_full(HDC hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, HDC hdcSrc, int nXSrc, int nYSrc, HBITMAP image, int maskX, int maskY, DWORD dwRop) {
+	return(fake_MaskBlt(hdcDest, nXDest, nYDest, nWidth, nHeight, hdcSrc, nXSrc, nYSrc, image, maskX, maskY, dwRop, real_MaskBlt_full));
+}
+
+
+// Next full function
+GdiAlphaBlend_funcType real_GdiAlphaBlend_full = NULL;
+FARPROC GdiAlphaBlend_full_address = GetProcAddress(GDI32FullHandle, "GdiAlphaBlend");
+GdiAlphaBlend_funcType GdiAlphaBlend_full = (GdiAlphaBlend_funcType)GdiAlphaBlend_full_address;
+
+BOOL WINAPI fake_GdiAlphaBlend_normal(HDC hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, HDC hdcSrc, int nXSrc, int nYSrc, int nWidthSrc, int nHeightSrc, BLENDFUNCTION bl) {
+	return(fake_GdiAlphaBlend(hdcDest, nXDest, nYDest, nWidth, nHeight, hdcSrc, nXSrc, nYSrc, nWidthSrc, nHeightSrc, bl, real_GdiAlphaBlend));
+}
+
+BOOL WINAPI fake_GdiAlphaBlend_full(HDC hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, HDC hdcSrc, int nXSrc, int nYSrc, int nWidthSrc, int nHeightSrc, BLENDFUNCTION bl) {
+	return(fake_GdiAlphaBlend(hdcDest, nXDest, nYDest, nWidth, nHeight, hdcSrc, nXSrc, nYSrc, nWidthSrc, nHeightSrc, bl, real_GdiAlphaBlend_full));
+}
+
+
+// Next full function
+GdiTransparentBlt_funcType real_GdiTransparentBlt_full = NULL;
+FARPROC GdiTransparentBlt_full_address = GetProcAddress(GDI32FullHandle, "GdiTransparentBlt");
+GdiTransparentBlt_funcType GdiTransparentBlt_full = (GdiTransparentBlt_funcType)GdiTransparentBlt_full_address;
+
+
+BOOL WINAPI fake_GdiTransparentBlt_normal(HDC hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, HDC hdcSrc, int nXSrc, int nYSrc, int widthSrc, int heightSrc, UINT transparent) {
+	return(fake_GdiTransparentBlt(hdcDest, nXDest, nYDest, nWidth, nHeight, hdcSrc, nXSrc, nYSrc,  widthSrc, heightSrc, transparent, real_GdiTransparentBlt));
+}
+
+BOOL WINAPI fake_GdiTransparentBlt_full(HDC hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, HDC hdcSrc, int nXSrc, int nYSrc, int widthSrc, int heightSrc, UINT transparent) {
+	return(fake_GdiTransparentBlt(hdcDest, nXDest, nYDest, nWidth, nHeight, hdcSrc, nXSrc, nYSrc, widthSrc, heightSrc, transparent, real_GdiTransparentBlt_full));
+}
+
+
+// Next full function
+PlgBlt_funcType real_PlgBlt_full = NULL;
+FARPROC PlgBlt_full_address = GetProcAddress(GDI32FullHandle, "PlgBlt");
+PlgBlt_funcType PlgBlt_full = (PlgBlt_funcType)PlgBlt_full_address;
+
+
+BOOL WINAPI fake_PlgBlt_normal(HDC hdcDest, const POINT* point, HDC hdcSrc, int x, int y, int width, int height, HBITMAP mask, int xMask, int yMask) {
+	return(fake_PlgBlt(hdcDest, point, hdcSrc, x, y, width, height, mask, xMask, yMask, real_PlgBlt));
+}
+BOOL WINAPI fake_PlgBlt_full(HDC hdcDest, const POINT* point, HDC hdcSrc, int x, int y, int width, int height, HBITMAP mask, int xMask, int yMask) {
+	return(fake_PlgBlt(hdcDest, point, hdcSrc, x, y, width, height, mask, xMask, yMask, real_PlgBlt_full));
+}
+
+// Next full function
 
 //Converts a GDI font charset identifier to a Windows codePage identifier
 inline int charSetToCodePage(int charset) {
@@ -1362,10 +1441,7 @@ BOOL WINAPI fake_DestroyWindow(HWND hwnd) {
 }
 
 void gdiHooks_inProcess_initialize() {
-	if (!BitBlt_full_address) {
-		Beep(500, 50);
-	}
-
+	
 	tls_index_textInsertionsCount=TlsAlloc();
 	tls_index_curScriptTextOutScriptAnalysis=TlsAlloc();
 	//Initialize the timer for text change notifications
@@ -1387,14 +1463,13 @@ void gdiHooks_inProcess_initialize() {
 	//apiHook_hookFunction_safe(FillRect, fake_FillRect, &real_FillRect);//logged
 	apiHook_hookFunction_safe(DrawFocusRect, fake_DrawFocusRect, &real_DrawFocusRect);
 	//apiHook_hookFunction_safe(BeginPaint, fake_BeginPaint, &real_BeginPaint);
-	apiHook_hookFunction_safe(BitBlt_full, fake_BitBlt_full, &real_BitBlt_full);//logged
 	apiHook_hookFunction_safe(BitBlt, fake_BitBlt_normal, &real_BitBlt);//logged
 	apiHook_hookFunction_safe(InternalBitBlt, fake_InternalBitBlt, &real_InternalBitBlt);//logged
-	apiHook_hookFunction_safe(MaskBlt, fake_MaskBlt, &real_MaskBlt);//logged
-	apiHook_hookFunction_safe(PlgBlt, fake_PlgBlt, &real_PlgBlt);
-	apiHook_hookFunction_safe(GdiAlphaBlend, fake_GdiAlphaBlend, &real_GdiAlphaBlend);
-	apiHook_hookFunction_safe(StretchBlt, fake_StretchBlt, &real_StretchBlt);
-	apiHook_hookFunction_safe(GdiTransparentBlt, fake_GdiTransparentBlt, &real_GdiTransparentBlt);
+	apiHook_hookFunction_safe(MaskBlt, fake_MaskBlt_normal, &real_MaskBlt);//logged
+	apiHook_hookFunction_safe(PlgBlt, fake_PlgBlt_normal, &real_PlgBlt);
+	apiHook_hookFunction_safe(GdiAlphaBlend, fake_GdiAlphaBlend_normal, &real_GdiAlphaBlend);
+	apiHook_hookFunction_safe(StretchBlt, fake_StretchBlt_normal, &real_StretchBlt);
+	apiHook_hookFunction_safe(GdiTransparentBlt, fake_GdiTransparentBlt_normal, &real_GdiTransparentBlt);
 	//apiHook_hookFunction_safe(PatBlt, fake_PatBlt, &real_PatBlt);
 	apiHook_hookFunction_safe(ScrollWindow, fake_ScrollWindow, &real_ScrollWindow);
 	//apiHook_hookFunction_safe(drawThemeBackground, fake_DrawThemeBackground, &real_DrawThemeBackground);
@@ -1404,6 +1479,15 @@ void gdiHooks_inProcess_initialize() {
 	apiHook_hookFunction_safe(ScriptStringFree, fake_ScriptStringFree, &real_ScriptStringFree);
 	apiHook_hookFunction_safe(ScriptStringOut, fake_ScriptStringOut, &real_ScriptStringOut);
 	apiHook_hookFunction_safe(ScriptTextOut, fake_ScriptTextOut, &real_ScriptTextOut);
+	if (GDI32FullHandle) {
+		// hook the gdi 32 full function variants only if the gdi32 full dll is found
+		apiHook_hookFunction_safe(BitBlt_full, fake_BitBlt_full, &real_BitBlt_full);//logged
+		//apiHook_hookFunction_safe(MaskBlt_full, fake_MaskBlt_full, &real_MaskBlt_full);//logged
+		//apiHook_hookFunction_safe(PlgBlt_full, fake_PlgBlt_full, &real_PlgBlt_full);
+		//apiHook_hookFunction_safe(GdiAlphaBlend_full, fake_GdiAlphaBlend_full, &real_GdiAlphaBlend_full);
+		//apiHook_hookFunction_safe(StretchBlt_full, fake_StretchBlt_full, &real_StretchBlt_full);
+		//apiHook_hookFunction_safe(GdiTransparentBlt_full, fake_GdiTransparentBlt_full, &real_GdiTransparentBlt_full);
+	}
 }
 
 void gdiHooks_inProcess_terminate() {
