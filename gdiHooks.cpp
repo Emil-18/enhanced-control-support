@@ -45,7 +45,7 @@ HMODULE GDI32FullHandle = LoadLibraryA("GDI32Full");
 // I do it in this way, so we can easily toggle the logging of this information, and so we don't need to get all other debug loggings at the same time
 // When this is enabled, some programs, such as iZoom and notepad ++ will crash at startup. As of now, I don't know why.
 // To work around this, start this version of NVDA while the program runs
-# define LOGFUNCTIONS 1
+# define LOGFUNCTIONS 0
 #if LOGFUNCTIONS
 #define LOGFUNCTIONINFO(message) LOG_INFO(message)
 #else
@@ -960,7 +960,7 @@ void StretchBlt_helper(HDC hdcDest, int nXDest, int nYDest, int nWidthDest, int 
 	bool sourceInvert=(dwRop==MERGEPAINT||dwRop==NOTSRCCOPY||dwRop==PATPAINT);
 	// Do to our version of the display model moves rather than copies rectangles with text, we only want to clear the destination rectangle if MERGECOPY is used.
 	// In Addition, clearing the destination rectangle causes problems when we hook both the normal and the full BitBlt/StretchBlt/... variants, as they sometimes call their counterparts.
-	bool opaqueSource = (dwRop == MERGECOPY);//||dwRop==NOTSRCCOPY||dwRop==SRCCOPY);
+	bool opaqueSource = (dwRop == MERGECOPY||dwRop==NOTSRCCOPY||dwRop==SRCCOPY);
 	bool clearDest=(dwRop==BLACKNESS||dwRop==WHITENESS||dwRop==PATCOPY);
 	//If there is no source dc given, the destination dc should be used as the source
 	if(hdcSrc==NULL) hdcSrc=hdcDest;
@@ -997,14 +997,21 @@ void StretchBlt_helper(HDC hdcDest, int nXDest, int nYDest, int nWidthDest, int 
 		// So clear the rect copied from the source model if it differs from the dest model and if the source model is a memory model.
 		// This prevents the scrambeling, but also clears actual text in some situations.
 		HWND srcWindow = WindowFromDC(hdcSrc);
-		// This is the one that most likely will be used in the add-on
+		//This is the one that most likely will be used in the add-on
+		
+		
 		srcModel->copyRectangle(srcRect, !srcWindow && srcModel != destModel, opaqueSource,sourceInvert,destRect,NULL,destModel);
+		// As we are hooking the normal gdi32 functions as well as the full variants, make sure we don't handle them twice, as they may call their counterparts
 		//srcModel->copyRectangle(srcRect, dwRop == SRCERASE || dwRop == NOTSRCERASE, opaqueSource, sourceInvert, destRect, NULL, destModel);
 		// This is the original one used in core
 		//srcModel->copyRectangle(srcRect, FALSE  , opaqueSource, sourceInvert, destRect, NULL, destModel);
-		LOGFUNCTIONINFO(L"After copy, the dest and src models chunk count is " << destModel->getChunkCount() << L" and " << srcModel->getChunkCount());
+		
 		
 		//srcModel->copyRectangle(srcRect, destWindow && destWindow == lastCopiedWindow, opaqueSource,sourceInvert,destRect,NULL,destModel);
+		LOGFUNCTIONINFO(L"After copy, the dest and src models chunk count is " << destModel->getChunkCount() << L" and " << srcModel->getChunkCount());
+		
+		TextInsertionTracker::reportTextInsertion();
+
 		HWND hwnd=WindowFromDC(hdcDest);
 		if(hwnd) queueTextChangeNotify(hwnd,destRect);
 	}
@@ -1031,9 +1038,10 @@ BitBlt_funcType real_BitBlt=NULL;
 
 BOOL WINAPI fake_BitBlt(HDC hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, HDC hdcSrc, int nXSrc, int nYSrc, DWORD dwRop, BitBlt_funcType realFunction) {
 	//Call the real BitBlt
+	TextInsertionTracker tracker;
 	BOOL res=realFunction(hdcDest,nXDest,nYDest,nWidth,nHeight,hdcSrc,nXSrc,nYSrc,dwRop);
 	//If bit blit didn't work, or its not a simple copy, we don't want to know about it
-	if(!res) return res;
+	if(!res || tracker.hasTrackedTextInsertion()) return res;
 	
 	StretchBlt_helper(hdcDest, nXDest, nYDest, nWidth, nHeight, hdcSrc, nXSrc, nYSrc, nWidth, nHeight, dwRop, L"BitBlt");
 	return res;
@@ -1048,8 +1056,9 @@ InternalBitBlt_funcType InternalBitBlt = (InternalBitBlt_funcType)*address;
 InternalBitBlt_funcType real_InternalBitBlt = NULL;
 BOOL APIENTRY fake_InternalBitBlt(HDC hdc, INT x, INT y, INT width, INT height, INT xSrc, INT ySrc, DWORD dwRop) {
 	//Beep(500, 10);
+	TextInsertionTracker tracker;
 	BOOL res = real_InternalBitBlt(hdc, x, y, width, height, xSrc, ySrc, dwRop);
-	if (!res) return(res);
+	if (!res || tracker.hasTrackedTextInsertion()) return(res);
 	StretchBlt_helper(hdc, x, y, width, height, NULL, xSrc, ySrc, width, height, dwRop, L"InternalBitBlt");
 	return(res);
 }
@@ -1057,9 +1066,10 @@ typedef BOOL(WINAPI* MaskBlt_funcType)(HDC, int, int, int, int, HDC, int, int, H
 MaskBlt_funcType real_MaskBlt = NULL;
 BOOL WINAPI fake_MaskBlt(HDC hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, HDC hdcSrc, int nXSrc, int nYSrc, HBITMAP bitmap, int xMask, int yMask, DWORD dwRop, MaskBlt_funcType real_MaskBlt) {
 	//Call the real BitBlt
+	TextInsertionTracker tracker;
 	BOOL res = real_MaskBlt(hdcDest, nXDest, nYDest, nWidth, nHeight, hdcSrc, nXSrc, nYSrc, bitmap, xMask, yMask, dwRop);
 	//If bit blit didn't work, or its not a simple copy, we don't want to know about it
-	if (!res) return res;
+	if (!res || tracker.hasTrackedTextInsertion()) return res;
 	//Beep(500, 50);
 	StretchBlt_helper(hdcDest, nXDest, nYDest, nWidth, nHeight, hdcSrc, nXSrc, nYSrc, nWidth, nHeight, dwRop, L"MaskBlt");
 	return res;
@@ -1070,8 +1080,9 @@ typedef BOOL(WINAPI* PlgBlt_funcType)(HDC, const POINT*, HDC, int, int, int, int
 PlgBlt_funcType real_PlgBlt = NULL;
 BOOL WINAPI fake_PlgBlt(HDC hdcDest, const POINT* points, HDC hdcSrc, int srcX, int srcY, int srcWidth, int srcHeight, HBITMAP bitmap, int maskX, int maskY, PlgBlt_funcType realFunction) {
 	//Beep(500, 50);
+	TextInsertionTracker tracker;
 	BOOL res = realFunction(hdcDest, points, hdcSrc, srcX, srcY, srcWidth, srcHeight, bitmap, maskX, maskY);
-	if (!res) return(res);
+	if (!res || tracker.hasTrackedTextInsertion()) return(res);
 	//Beep(500, 50);
 	int xDest = points[0].x;
 	int yDest = points[0].y;
@@ -1084,10 +1095,11 @@ typedef BOOL(WINAPI* GdiAlphaBlend_funcType)(HDC, int, int, int, int, HDC, int, 
 GdiAlphaBlend_funcType real_GdiAlphaBlend = NULL;
 BOOL WINAPI fake_GdiAlphaBlend(HDC hdcDest, int nXDest, int nYDest, int nWidthDest, int nHeightDest, HDC hdcSrc, int nXSrc, int nYSrc, int nWidthSrc, int nHeightSrc, BLENDFUNCTION crTransparent, GdiAlphaBlend_funcType real_AlphaBlend) {
 	//Call the real StretchBlt
-	BOOL res = real_GdiAlphaBlend(hdcDest, nXDest, nYDest, nWidthDest, nHeightDest, hdcSrc, nXSrc, nYSrc, nWidthSrc, nHeightSrc, crTransparent);
-	if (!res) return res;
+	TextInsertionTracker tracker;
+	BOOL res = real_AlphaBlend(hdcDest, nXDest, nYDest, nWidthDest, nHeightDest, hdcSrc, nXSrc, nYSrc, nWidthSrc, nHeightSrc, crTransparent);
+	if (!res || tracker.hasTrackedTextInsertion()) return res;
 	//Beep(500, 50);
-	StretchBlt_helper(hdcDest, nXDest, nYDest, nWidthDest, nHeightDest, hdcSrc, nXSrc, nYSrc, nWidthSrc, nHeightSrc, SRCPAINT);
+	StretchBlt_helper(hdcDest, nXDest, nYDest, nWidthDest, nHeightDest, hdcSrc, nXSrc, nYSrc, nWidthSrc, nHeightSrc, SRCPAINT, L"GdiAlphaBlend");
 	return res;
 }
 
@@ -1096,15 +1108,18 @@ typedef BOOL(WINAPI *StretchBlt_funcType)(HDC,int,int,int,int,HDC,int,int,int,in
 StretchBlt_funcType real_StretchBlt=NULL;
 BOOL WINAPI fake_StretchBlt(HDC hdcDest, int nXDest, int nYDest, int nWidthDest, int nHeightDest, HDC hdcSrc, int nXSrc, int nYSrc, int nWidthSrc, int nHeightSrc, DWORD dwRop, StretchBlt_funcType real_StretchBlt) {
 	//Call the real StretchBlt
+	TextInsertionTracker tracker;
 	BOOL res=real_StretchBlt(hdcDest,nXDest,nYDest,nWidthDest,nHeightDest,hdcSrc,nXSrc,nYSrc,nWidthSrc,nHeightSrc,dwRop);
-	if(!res) return res;
+	if(!res || tracker.hasTrackedTextInsertion()) return res;
 	//#2989: KMPlayer uses stretchBlt with SRCCOPY  to place a graphic over the top of its menu items replacing the real text.
 	//Therefore at the moment don't allow stretchBlt SRCCOPY to clear previous text -- change it to SRCAND if blitting directly to a menu window
-	HWND hwnd=NULL;
-	wchar_t className[7];
-	if(hdcDest&&dwRop==SRCCOPY&&(hwnd=WindowFromDC(hdcDest))&&GetClassName(hwnd,className,ARRAYSIZE(className))>0&&wcscmp(className,L"#32768")==0) {
-		dwRop=SRCAND;
-	}
+	// Customization... buuuuuuuuuuuuuuuuu.
+	// In addition, this could theoreticly make it so text in different menus aren't reported
+	//HWND hwnd=NULL;
+	//wchar_t className[7];
+	//if(hdcDest&&dwRop==SRCCOPY&&(hwnd=WindowFromDC(hdcDest))&&GetClassName(hwnd,className,ARRAYSIZE(className))>0&&wcscmp(className,L"#32768")==0) {
+		//dwRop=SRCAND;
+	//}
 	StretchBlt_helper(hdcDest, nXDest, nYDest, nWidthDest, nHeightDest, hdcSrc, nXSrc, nYSrc, nWidthSrc, nHeightSrc, dwRop, L"StretchBlt");
 	return res;
 }
@@ -1114,8 +1129,9 @@ typedef BOOL(WINAPI *GdiTransparentBlt_funcType)(HDC,int,int,int,int,HDC,int,int
 GdiTransparentBlt_funcType real_GdiTransparentBlt=NULL;
 BOOL WINAPI fake_GdiTransparentBlt(HDC hdcDest, int nXDest, int nYDest, int nWidthDest, int nHeightDest, HDC hdcSrc, int nXSrc, int nYSrc, int nWidthSrc, int nHeightSrc, UINT crTransparent, GdiTransparentBlt_funcType realFunction) {
 	//Call the real StretchBlt
+	TextInsertionTracker tracker;
 	BOOL res= realFunction(hdcDest,nXDest,nYDest,nWidthDest,nHeightDest,hdcSrc,nXSrc,nYSrc,nWidthSrc,nHeightSrc,crTransparent);
-	if(!res) return res;
+	if(!res || tracker.hasTrackedTextInsertion()) return res;
 	StretchBlt_helper(hdcDest, nXDest, nYDest, nWidthDest, nHeightDest, hdcSrc, nXSrc, nYSrc, nWidthSrc, nHeightSrc, SRCPAINT, L"GdiTransparentBlt");
 	return res;
 }
@@ -1482,11 +1498,11 @@ void gdiHooks_inProcess_initialize() {
 	if (GDI32FullHandle) {
 		// hook the gdi 32 full function variants only if the gdi32 full dll is found
 		apiHook_hookFunction_safe(BitBlt_full, fake_BitBlt_full, &real_BitBlt_full);//logged
-		//apiHook_hookFunction_safe(MaskBlt_full, fake_MaskBlt_full, &real_MaskBlt_full);//logged
-		//apiHook_hookFunction_safe(PlgBlt_full, fake_PlgBlt_full, &real_PlgBlt_full);
-		//apiHook_hookFunction_safe(GdiAlphaBlend_full, fake_GdiAlphaBlend_full, &real_GdiAlphaBlend_full);
-		//apiHook_hookFunction_safe(StretchBlt_full, fake_StretchBlt_full, &real_StretchBlt_full);
-		//apiHook_hookFunction_safe(GdiTransparentBlt_full, fake_GdiTransparentBlt_full, &real_GdiTransparentBlt_full);
+		apiHook_hookFunction_safe(MaskBlt_full, fake_MaskBlt_full, &real_MaskBlt_full);//logged
+		apiHook_hookFunction_safe(PlgBlt_full, fake_PlgBlt_full, &real_PlgBlt_full);
+		apiHook_hookFunction_safe(GdiAlphaBlend_full, fake_GdiAlphaBlend_full, &real_GdiAlphaBlend_full);
+		apiHook_hookFunction_safe(StretchBlt_full, fake_StretchBlt_full, &real_StretchBlt_full);
+		apiHook_hookFunction_safe(GdiTransparentBlt_full, fake_GdiTransparentBlt_full, &real_GdiTransparentBlt_full);
 	}
 }
 
