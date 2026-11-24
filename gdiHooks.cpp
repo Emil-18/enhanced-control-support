@@ -41,6 +41,8 @@ DrawThemeBackground_funcType drawThemeBackground = (DrawThemeBackground_funcType
 // The handle of GDI32full.dll. This dll has a copy of many functions in the normal GDI32.dll
 // Although very uncommon, applications may choose to use the functions located here instead of the normal one, so we want to hook these as well
 HMODULE GDI32FullHandle = LoadLibraryA("GDI32Full");
+// The handle of msImg32.dll. A version of AlphaBlend and TransparentBlt is defined here, so we want to hook these as well just in case
+HMODULE MsImg32Handle = LoadLibraryA("MsImg32");
 // A macro to log what hooked function is being called, and what arguments is sent to it.
 // I do it in this way, so we can easily toggle the logging of this information, and so we don't need to get all other debug loggings at the same time
 // When this is enabled, some programs, such as iZoom and notepad ++ will crash at startup. As of now, I don't know why.
@@ -1223,7 +1225,29 @@ BOOL WINAPI fake_PlgBlt_full(HDC hdcDest, const POINT* point, HDC hdcSrc, int x,
 	return(fake_PlgBlt(hdcDest, point, hdcSrc, x, y, width, height, mask, xMask, yMask, real_PlgBlt_full));
 }
 
-// Next full function
+// The functions located in MsImg32.dll
+// I know that the variable names in this section are shitty and inconsistant
+
+GdiAlphaBlend_funcType real_AlphaBlend = NULL;
+FARPROC AlphaBlend_full_address = GetProcAddress(MsImg32Handle, "AlphaBlend");
+GdiAlphaBlend_funcType AlphaBlend_full = (GdiAlphaBlend_funcType)AlphaBlend_full_address;
+
+BOOL WINAPI fake_AlphaBlend_normal(HDC hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, HDC hdcSrc, int nXSrc, int nYSrc, int nWidthSrc, int nHeightSrc, BLENDFUNCTION bl) {
+	return(fake_GdiAlphaBlend(hdcDest, nXDest, nYDest, nWidth, nHeight, hdcSrc, nXSrc, nYSrc, nWidthSrc, nHeightSrc, bl, real_AlphaBlend));
+}
+
+
+
+// Next MsImg32 function
+
+GdiTransparentBlt_funcType real_TransparentBlt = NULL;
+FARPROC TransparentBlt_full_address = GetProcAddress(MsImg32Handle, "TransparentBlt");
+GdiTransparentBlt_funcType TransparentBlt_full = (GdiTransparentBlt_funcType)TransparentBlt_full_address;
+
+
+BOOL WINAPI fake_TransparentBlt_normal(HDC hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, HDC hdcSrc, int nXSrc, int nYSrc, int widthSrc, int heightSrc, UINT transparent) {
+	return(fake_GdiTransparentBlt(hdcDest, nXDest, nYDest, nWidth, nHeight, hdcSrc, nXSrc, nYSrc, widthSrc, heightSrc, transparent, real_TransparentBlt));
+}
 
 //Converts a GDI font charset identifier to a Windows codePage identifier
 inline int charSetToCodePage(int charset) {
@@ -1503,6 +1527,11 @@ void gdiHooks_inProcess_initialize() {
 		apiHook_hookFunction_safe(GdiAlphaBlend_full, fake_GdiAlphaBlend_full, &real_GdiAlphaBlend_full);
 		apiHook_hookFunction_safe(StretchBlt_full, fake_StretchBlt_full, &real_StretchBlt_full);
 		apiHook_hookFunction_safe(GdiTransparentBlt_full, fake_GdiTransparentBlt_full, &real_GdiTransparentBlt_full);
+	}
+	if (MsImg32Handle) {
+		// Only hook the MsImg32 function if the MsImg32 dll is found
+		apiHook_hookFunction_safe(AlphaBlend_full, fake_AlphaBlend_normal, &real_AlphaBlend);
+		apiHook_hookFunction_safe(TransparentBlt_full, fake_TransparentBlt_normal, &real_TransparentBlt);
 	}
 }
 
